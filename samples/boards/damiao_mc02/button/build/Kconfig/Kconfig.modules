@@ -1,0 +1,54 @@
+menu "Engineer-manifest (/home/sassinak/Engineer-workspace/Engineer-manifest)"
+osource "/home/sassinak/Engineer-workspace/Engineer-manifest/Kconfig"
+config ZEPHYR_ENGINEER_MANIFEST_MODULE
+	bool
+	default y
+endmenu
+menu "etl (/home/sassinak/Engineer-workspace/Engineer-sdk/modules/lib/etl)"
+osource "/home/sassinak/Engineer-workspace/Engineer-sdk/modules/lib/etl/zephyr/Kconfig"
+config ZEPHYR_ETL_MODULE
+	bool
+	default y
+endmenu
+menu "cmsis (/home/sassinak/Engineer-workspace/Engineer-sdk/modules/hal/cmsis)"
+osource "$(ZEPHYR_CMSIS_KCONFIG)"
+config ZEPHYR_CMSIS_MODULE
+	bool
+	default y
+endmenu
+menu "cmsis-dsp (/home/sassinak/Engineer-workspace/Engineer-sdk/modules/lib/cmsis-dsp)"
+osource "$(ZEPHYR_CMSIS_DSP_KCONFIG)"
+config ZEPHYR_CMSIS_DSP_MODULE
+	bool
+	default y
+endmenu
+menu "cmsis-nn (/home/sassinak/Engineer-workspace/Engineer-sdk/modules/lib/cmsis-nn)"
+osource "$(ZEPHYR_CMSIS_NN_KCONFIG)"
+config ZEPHYR_CMSIS_NN_MODULE
+	bool
+	default y
+endmenu
+menu "cmsis_6 (/home/sassinak/Engineer-workspace/Engineer-sdk/modules/hal/cmsis_6)"
+osource "$(ZEPHYR_CMSIS_6_KCONFIG)"
+config ZEPHYR_CMSIS_6_MODULE
+	bool
+	default y
+endmenu
+menu "hal_st (/home/sassinak/Engineer-workspace/Engineer-sdk/modules/hal/st)"
+osource "$(ZEPHYR_HAL_ST_KCONFIG)"
+config ZEPHYR_HAL_ST_MODULE
+	bool
+	default y
+endmenu
+config ZEPHYR_HAL_STM32_MODULE
+	bool
+	default y
+
+config ZEPHYR_HAL_STM32_MODULE_BLOBS
+	bool
+menu "segger (/home/sassinak/Engineer-workspace/Engineer-sdk/modules/debug/segger)"
+osource "$(ZEPHYR_SEGGER_KCONFIG)"
+config ZEPHYR_SEGGER_MODULE
+	bool
+	default y
+endmenu

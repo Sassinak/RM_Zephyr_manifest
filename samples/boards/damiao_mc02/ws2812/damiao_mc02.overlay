@@ -1,0 +1,6 @@
+// &spi6{
+//     status = "okay";
+//     rgb_led: ws2812@0{
+//         label = "led"
+//     };
+// };

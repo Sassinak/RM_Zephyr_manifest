@@ -1,0 +1,9 @@
+# sample:
+#   name: ws2812
+#   description: WS2812 LED strip example
+# board: damiao_mc02
+# tests:
+#   tags:
+#     - ws2812
+#     - led
+#   filter: 

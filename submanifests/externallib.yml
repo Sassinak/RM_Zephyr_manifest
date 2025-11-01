@@ -1,0 +1,6 @@
+manifest:
+  projects:
+    - name: etl
+      url: https://github.com/ETLCPP/etl.git
+      revision: master
+      path: Engineer-sdk/modules/lib/etl

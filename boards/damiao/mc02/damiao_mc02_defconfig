@@ -1,0 +1,22 @@
+# Copyright (c) 2025 RobotPilots-SZU
+
+# Enable MPU
+CONFIG_ARM_MPU=y
+
+# Enable HW stack protection
+CONFIG_HW_STACK_PROTECTION=y
+
+# Enable drivers
+CONFIG_DMA=y
+CONFIG_GPIO=y
+CONFIG_COUNTER=y
+CONFIG_PWM=y
+CONFIG_SERIAL=y
+CONFIG_SPI=y
+CONFIG_I2C=y
+CONFIG_CAN=y
+
+# On-board devices
+CONFIG_LED_STRIP=y
+CONFIG_SENSOR=y
+CONFIG_BMI08X=y

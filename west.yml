@@ -1,0 +1,34 @@
+manifest:
+
+  defaults:
+    remote: Sassinak                                     # 设置默认的remote，这样下面的project就可以不写remote字段
+
+  remotes:                                                # 这里可以配置多个远程仓库 必须是复数                     
+    - name: Sassinak                                      # 这个名字是为了方便后面项目配置时选择url路径
+      url-base: https://github.com/Sassinak                # 注意这里并不是.git结尾,这里只是搜索路径的一部分，后面还需要跟项目名(Engineer)
+    - name: Zephyr-RTOS
+      url-base: https://github.com/zephyrproject-rtos     # 这里引入官方内核
+
+  projects:
+    - name: Engineer
+      description: this is a test project,just to validate my study
+      revision: main                                      # 必须有个revision字段，因为west默认查找的分支是master，而github新建的仓库默认分支是main
+      path: Engineer/RP_Engineer
+    - name: zephyr
+      remote: Zephyr-RTOS                                   # 项目内的remote必须是单数的
+      revision: main
+      path: zephyr                                   
+      import:
+        path-prefix: Engineer-sdk
+        name-allowlist: 
+          - cmsis
+          - cmsis_6
+          - cmsis-nn
+          - cmsis-dsp
+          - segger
+          - hal_st
+          - hal_stm32
+        
+  self:
+    path: Engineer-manifest
+    import: submanifests

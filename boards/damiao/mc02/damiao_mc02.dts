@@ -1,0 +1,342 @@
+/*
+ * Copyright (c) 2025 RobotPilots-SZU
+ * SPDX-License-Identifier: Apache-2.0
+*/
+
+/*
+ * author: Sassinak
+ * reference: zephyr/boards/st/nucleo_h723zg/nucleo_h723zg.dts,
+ */
+
+/dts-v1/;
+
+#include <arm/st/h7/stm32h723Xg.dtsi>                       // 描述芯片的soc，内存地址信息
+#include <st/h7/stm32h723vgtx-pinctrl.dtsi>                 // 描述芯片的引脚封装
+
+#include <zephyr/dt-bindings/input/input-event-codes.h>     // 定义设备的输入事件码，比如按键
+#include <zephyr/dt-bindings/led/led.h>                     // 定义LED的颜色
+#include <zephyr/dt-bindings/dma/stm32_dma.h>
+#include <zephyr/dt-bindings/spi/spi.h>
+
+
+// 根节点中只需要描述板子特有的硬件功能，在喵板中只有一个用户按键
+/ {
+    model = "damiao-mc02 board";
+    compatible = "damiao,mc02", "st,stm32h723";
+
+    chosen {
+        zephyr,dtcm  = &dtcm;                
+        zephyr,sram  = &sram0;
+        zephyr,itcm  = &itcm;
+        zephyr,flash = &flash0;
+    };
+
+    gpio_keys {
+        compatible = "gpio-keys";
+        user_button: button_0 {
+            gpios = <&gpioa 15 (GPIO_PULL_DOWN | GPIO_ACTIVE_LOW)>;
+            label = "user";
+            zephyr,code = <INPUT_KEY_0>;                                // 在input-event-codes.h定义了按键输入事件
+        };
+    };
+
+    aliases {
+        sw0 = &user_button;         // switch 0,官方推荐用名,参考：https://docs.zephyrproject.org/latest/samples/basic/button/README.html
+    };
+};
+
+/* 时钟的配置可以根据cubemx的可视化时钟树来配置 */
+
+&clk_lsi {
+    status = "okay";
+};
+
+&clk_hsi48 {
+    status = "okay";
+};
+
+/* 高速外部晶振 */
+ &clk_hse {
+     clock-frequency = <DT_FREQ_M(24)>;      // 外部晶振频率24MHz,定义在fixed-clock.yaml
+     status = "okay";
+ };
+
+
+&pll {
+    clocks = <&clk_hse>;
+    div-m  = <12>;
+    mul-n  = <275>;
+    div-p  = <1>;
+    div-q  = <2>;
+    div-r  = <2>;
+    status = "okay";
+};
+
+&pll2 {
+    clocks = <&clk_hse>;
+    div-m  = <2>;
+    mul-n  = <40>;
+    div-p  = <4>;
+    div-q  = <4>;
+    div-r  = <2>;
+    status = "okay";
+};
+
+&pll3 {
+    clocks = <&clk_hse>;
+    div-m  = <2>;
+    mul-n  = <16>;
+    div-p  = <2>;
+    div-q  = <4>;
+    div-r  = <2>;
+    status = "okay";
+};
+
+&rcc {
+    clocks = <&pll>;
+    clock-frequency = <DT_FREQ_M(550)>;
+    d1cpre = <1>;   /* CPU: 550   MHz */
+    hpre = <2>;     /* HCLK: 275   MHz */
+    d1ppre = <2>;   /* APB1: 137.5 MHz */
+    d2ppre1 = <2>;  /* APB2: 137.5 MHz */
+    d2ppre2 = <2>;  /* APB3: 137.5 MHz */
+    d3ppre = <2>;   /* APB4: 137.5 MHz */
+};
+
+&iwdg1 {
+    status = "okay";
+};
+
+/* 断电保存ram */
+&backup_sram {
+    status = "okay";
+};
+
+&dma1 {
+    status = "okay";
+    dma-channels = <8>;             
+};
+
+&dma2 {
+    status = "okay";
+    dma-channels = <8>;             
+};
+
+/*
+ * DMAMUX1 is used with DMA1 and DMA2 in D2 domain
+ * DMAMUX1 channels 0 to 7 are connected to DMA1 channels 0 to 7
+ * DMAMUX1 channels 8 to 15 are connected to DMA2 channels 0 to 7
+ * search stm32h7xx_hal_dma.h find the defination of slot(DMA_REQUEST) & other configuration ！！！
+ */
+&dmamux1 {
+    status = "okay";          
+};
+
+/* 芯片温度传感器 */
+&digi_die_temp {
+    status = "okay";
+};
+
+/*---------------------spi config start----------------------------*/
+
+&spi2 {
+    status = "okay";
+    clocks = <&rcc STM32_CLOCK(APB1, 14U)>,
+             <&rcc STM32_SRC_PLL2_P SPI123_SEL(0)>;
+    pinctrl-0 = <&spi2_sck_pb13 &spi2_miso_pc2_c &spi2_mosi_pc1>;
+    pinctrl-names = "default";
+    cs-gpios = <&gpioc 0 GPIO_ACTIVE_HIGH>,
+               <&gpioc 3 GPIO_ACTIVE_HIGH>;
+    dmas =  <&dmamux1 1 40 STM32_DMA_PERIPH_TX>,    // TX: DMA1 Stream 1, request 40
+            <&dmamux1 4 39 STM32_DMA_PERIPH_RX>;    // RX: DMA1 Stream 4, request 39
+    dma-names = "spi1-tx", "spi1-rx";
+
+    bmi08x_accel: bmi08x@0 {
+        compatible = "bosch,bmi08x-accel";
+        // SPI
+        reg = <0>;
+        spi-max-frequency = <DT_FREQ_M(8)>;
+        // BMI08x
+        int-gpios = <&gpioe 10 GPIO_ACTIVE_HIGH>;
+        int1-map-io = <0x01>;       /* int1 Ready  */
+        int2-map-io = <0x00>;       /* No event  */
+        int1-conf-io = <0x04>;      /* int1 open-drain  */
+        int2-conf-io = <0x00>;      /* No mode */
+        accel-hz = "800";
+        accel-fs = <24>;
+        data-sync = <&bmi08x_gyro>; // 陀螺仪加速度同步采集
+    };
+
+    bmi08x_gyro: bmi08x@1 {
+        compatible = "bosch,bmi08x-gyro";
+        // SPI
+        reg = <1>;
+        spi-max-frequency = <DT_FREQ_M(8)>;
+        // BMI08x
+        int-gpios = <&gpioe 12 GPIO_ACTIVE_HIGH>;
+        int3-4-map-io = <0x01>;     /* int3 Ready  */
+        int3-4-conf-io = <0x02>;    /* int3 open-drain  */
+        gyro-hz = "1000_116";
+        gyro-fs = <1000>;
+        data-sync;
+    };        
+    
+};
+
+&spi6 {
+    status = "okay";
+    clocks = <&rcc STM32_CLOCK(APB4, 5U)>,
+             <&rcc STM32_SRC_PLL2_Q SPI6_SEL(1)>;
+    pinctrl-0 = <&spi6_sck_pa5 &spi6_mosi_pa7>;
+    pinctrl-names = "default";
+
+    rgb_led: ws2812@0 {
+        compatible = "worldsemi,ws2812-spi";
+        // SPI
+        reg = <0>;
+        spi-max-frequency = <DT_FREQ_M(4)>;
+        frame-format = <SPI_FRAME_FORMAT_TI>;
+        // WS2812
+        chain-length = <1>;
+        spi-one-frame = <0x70>;
+        spi-zero-frame = <0x40>;
+        color-mapping = <LED_COLOR_ID_GREEN>,
+                        <LED_COLOR_ID_RED>,
+                        <LED_COLOR_ID_BLUE>;
+        reset-delay = <250>;
+    };
+};
+
+/*---------------------spi config end----------------------------*/
+ 
+
+/*---------------------usart config start------------------------*/
+&usart1 {
+    status = "okay";
+    current-speed = <115200>;
+    stop-bits = "1";
+    data-bits = <8>;
+    parity = "none";
+    pinctrl-0 = <&usart1_tx_pa9 &usart1_rx_pa10>;
+    pinctrl-names = "default";
+    dmas =  <&dmamux1 9 42 STM32_DMA_PERIPH_TX>,   // TX: DMA2 Stream 2, request 42
+            <&dmamux1 8 41 STM32_DMA_PERIPH_RX>;   // RX: DMA2 Stream 1, request 41
+    dma-names = "usart1-tx", "usart1-rx";
+    fifo-enable;
+};
+
+&uart7 {
+    status = "okay";
+    current-speed = <921600>;
+    stop-bits = "1";
+    data-bits = <8>;
+    parity = "none";
+    pinctrl-0 = <&uart7_tx_pe8 &uart7_rx_pe7>;
+    pinctrl-names = "default";
+    fifo-enable;
+};
+
+&usart10 {
+    status = "okay";
+    current-speed = <115200>;
+    stop-bits = "1";
+    data-bits = <8>;
+    parity = "none";
+    pinctrl-0 = <&usart10_tx_pe3 &usart10_rx_pe2>;
+    pinctrl-names = "default";
+    fifo-enable;
+};
+
+
+&uart8 {
+    
+};
+
+&uart9 {
+    
+};
+
+
+/*RS485*/
+&usart2 {
+    status = "okay";
+    current-speed = <115200>;
+    stop-bits = "1";
+    data-bits = <8>;
+    pinctrl-0 = <&usart2_de_pd4 &usart2_rx_pd6 &usart2_tx_pd5>;
+    pinctrl-names = "default";
+    de-enable;    
+};
+/*RS485*/
+&usart3 {
+    status = "okay";
+    current-speed = <115200>;
+    stop-bits = "1";
+    data-bits = <8>;
+    pinctrl-0 = <&usart3_de_pb14 &usart3_rx_pd9 &usart3_tx_pd8>;
+    pinctrl-names = "default";
+    de-enable;
+};
+
+/*sbus*/
+&uart5 {
+    status = "okay";
+    current-speed = <100000>;
+    stop-bits = "1";
+    data-bits = <8>;
+    parity = "even";
+    pinctrl-0 = <&uart5_rx_pd2 &uart5_tx_pc12>;
+    pinctrl-names = "default";
+    fifo-enable;    
+};
+/*---------------------usart config end------------------------*/
+
+/*---------------------can config start------------------------*/
+/*
+ *                 硬件过滤器的配置
+ *
+ *  The Bosch M_CAN IP supports the following elements:
+ *  11-bit Filter        0-128 elements / 0-128 words
+ *  29-bit Filter        0-64 elements / 0-128 words
+ *  Rx FIFO 0            0-64 elements / 0-1152 words
+ *  Rx FIFO 1            0-64 elements / 0-1152 words
+ *  Rx Buffers            0-64 elements / 0-1152 words
+ *  Tx Event FIFO        0-32 elements / 0-64 words
+ *  Tx Buffers            0-32 elements / 0-576 words
+ *
+ *
+ *                    bitrate
+ * The CAN bitrates are set using: kconfig: option: `CONFIG_CAN_DEFAULT_BITRATE` 
+ * and: kconfig: option: `CONFIG_CAN_DEFAULT_BITRATE_DATA`, but can be overridden on a board level 
+ * using the ``bitrate`` and ``bitrate-data`` CAN controller devicetree properties if needed. 
+ * Default bitrates are 125 kbits/s for the arbitration phase/CAN classic and 1 Mbit/s for the CAN FD data
+ * 
+ */
+&fdcan1 {
+    status = "okay";
+    bosch,mram-cfg = <0x0 28 8 3 3 0 3 3>;                      // <offset std-filter-elements ext-filter-elements rx-fifo0-elements rx-fifo1-elements  rx-buffer-elements tx-event-fifo-elements tx-buffer-elements>
+    clocks = <&rcc STM32_CLOCK(APB1_2, 8U)>,
+             <&rcc STM32_SRC_PLL2_Q FDCAN_SEL(2)>;             // 在芯片手册中查一下 FDCANSEL，FDCANEN就懂了，配合cubmx时钟树
+    pinctrl-0 = <&fdcan1_rx_pd0 &fdcan1_tx_pd1>;
+    pinctrl-names = "default";
+};
+
+&fdcan2 {
+    status = "okay";
+    bosch,mram-cfg = <0x0 28 8 3 3 0 3 3>;
+    clocks = <&rcc STM32_CLOCK(APB1_2, 8U)>,
+             <&rcc STM32_SRC_PLL2_Q FDCAN_SEL(2)>;
+    pinctrl-0 = <&fdcan2_rx_pb5 &fdcan2_tx_pb6>;
+    pinctrl-names = "default";
+};
+
+&fdcan3 {
+    status = "okay";
+    bosch,mram-cfg = <0x0 28 8 3 3 0 3 3>;
+    clocks = <&rcc STM32_CLOCK(APB1_2, 8U)>,
+             <&rcc STM32_SRC_PLL2_Q FDCAN_SEL(2)>;
+    pinctrl-0 = <&fdcan3_rx_pd12 &fdcan3_tx_pd13>;
+    pinctrl-names = "default";
+};
+
+/*---------------------can config end---------------------------*/

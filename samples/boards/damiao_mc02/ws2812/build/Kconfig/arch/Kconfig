@@ -1,0 +1,11 @@
+# Load Zephyr Arch Kconfig descriptions.
+osource "/home/sassinak/Engineer-workspace/Engineer-sdk/zephyr/arch/rx/Kconfig"
+osource "/home/sassinak/Engineer-workspace/Engineer-sdk/zephyr/arch/x86/Kconfig"
+osource "/home/sassinak/Engineer-workspace/Engineer-sdk/zephyr/arch/xtensa/Kconfig"
+osource "/home/sassinak/Engineer-workspace/Engineer-sdk/zephyr/arch/sparc/Kconfig"
+osource "/home/sassinak/Engineer-workspace/Engineer-sdk/zephyr/arch/riscv/Kconfig"
+osource "/home/sassinak/Engineer-workspace/Engineer-sdk/zephyr/arch/posix/Kconfig"
+osource "/home/sassinak/Engineer-workspace/Engineer-sdk/zephyr/arch/mips/Kconfig"
+osource "/home/sassinak/Engineer-workspace/Engineer-sdk/zephyr/arch/arm64/Kconfig"
+osource "/home/sassinak/Engineer-workspace/Engineer-sdk/zephyr/arch/arm/Kconfig"
+osource "/home/sassinak/Engineer-workspace/Engineer-sdk/zephyr/arch/arc/Kconfig"
