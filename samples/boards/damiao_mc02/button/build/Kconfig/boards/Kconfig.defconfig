@@ -1,2 +1,0 @@
-# Load Zephyr board defconfig descriptions.
-osource "/home/sassinak/Engineer-workspace/Engineer-manifest/boards/damiao/mc02/Kconfig.defconfig"
