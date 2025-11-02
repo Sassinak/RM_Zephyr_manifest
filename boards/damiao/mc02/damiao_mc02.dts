@@ -17,6 +17,7 @@
 #include <zephyr/dt-bindings/led/led.h>                     // 定义LED的颜色
 #include <zephyr/dt-bindings/dma/stm32_dma.h>
 #include <zephyr/dt-bindings/spi/spi.h>
+#include <zephyr/dt-bindings/pwm/pwm.h>       
 
 
 // 根节点中只需要描述板子特有的硬件功能，在喵板中只有一个用户按键
@@ -40,8 +41,17 @@
         };
     };
 
+    buzzer {
+        status = "okay";
+        compatible = "pwm-leds";
+        buzzer: buzzer_pwm {
+            pwms = <&pwmBuzzer 2 PWM_MSEC(1) PWM_POLARITY_NORMAL>;
+        };
+    };
+
     aliases {
         sw0 = &user_button;         // switch 0,官方推荐用名,参考：https://docs.zephyrproject.org/latest/samples/basic/button/README.html
+        buzzer0 = &buzzer;
     };
 };
 
@@ -136,6 +146,19 @@
 &digi_die_temp {
     status = "okay";
 };
+
+/*---------------------timers config start--------------------------*/
+&timers12{
+    status = "okay";
+    st,prescaler = <138>;    // 137.5MHz / 137.5 = 1MHz
+
+    pwmBuzzer: pwm{
+        status = "okay";
+        pinctrl-0 = <&tim12_ch2_pb15>;
+        pinctrl-names = "default";
+    };
+};
+
 
 /*---------------------spi config start----------------------------*/
 

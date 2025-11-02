@@ -47,7 +47,7 @@ config SONG_PIRATES_CARIBBEAN_ENABLE
 	help
 	  Enable or disable the compilation of the Pirates of the Caribbean song.
 
-config SONG_GALA_ENABLE
+config SONG_GALA_ENABLErm
 	bool "Enable Gala Song"
 	default y
 	help
