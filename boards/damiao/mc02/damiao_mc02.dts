@@ -41,12 +41,10 @@
         };
     };
 
-    buzzer {
+    buzzer: buzzer0 {
         status = "okay";
-        compatible = "pwm-leds";
-        buzzer: buzzer_pwm {
-            pwms = <&pwmBuzzer 2 PWM_MSEC(1) PWM_POLARITY_NORMAL>;
-        };
+        compatible = "pwm-buzzer";
+        pwms = <&pwmBuzzer 2 PWM_MSEC(1) PWM_POLARITY_NORMAL>;
     };
 
     aliases {

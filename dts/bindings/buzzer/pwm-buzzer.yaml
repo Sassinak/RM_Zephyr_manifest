@@ -1,0 +1,26 @@
+# Copyright (c) 2025 Sassinak
+# SPDX-License-Identifier: Apache-2.0
+
+description: 
+  Custom PWM-controlled Buzzer
+
+compatible: "pwm-buzzer"
+
+properties:
+  pwms:
+    required: true
+    type: phandle-array
+    description: |
+      Reference to a PWM instance.
+
+      The period field is used by the set_brightness function of the LED API.
+      Its value should at least be greater that 100 nanoseconds (for a full
+      brightness granularity) and lesser than 50 milliseconds (average visual
+      persistence time of the human eye). Typical values for the PWM period
+      are 10 or 20 milliseconds.
+  label:
+    type: string
+    description: |
+      Human readable string describing the Buzzer. It can be used by an
+      application to identify this Buzzer or to retrieve its number/index
+      (i.e. child node number) on the parent device.
