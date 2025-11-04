@@ -4,7 +4,7 @@
 description: 
   Custom PWM-controlled Buzzer
 
-compatible: "pwm-buzzer"
+compatible: "RP,pwm-buzzer"
 
 properties:
   pwms:
