@@ -25,7 +25,7 @@ properties:
     type: int
     description: |
       The frequency of the buzzer in Hertz.
-    default: 1000000
+    default: 2000
 
   default-volume:
     required: true
