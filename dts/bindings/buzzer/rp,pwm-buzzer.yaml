@@ -4,7 +4,7 @@
 description: 
   Custom PWM-controlled Buzzer
 
-compatible: "RP,pwm-buzzer"
+compatible: "rp,pwm-buzzer"
 
 properties:
   pwms:
@@ -13,14 +13,23 @@ properties:
     description: |
       Reference to a PWM instance.
 
-      The period field is used by the set_brightness function of the LED API.
-      Its value should at least be greater that 100 nanoseconds (for a full
-      brightness granularity) and lesser than 50 milliseconds (average visual
-      persistence time of the human eye). Typical values for the PWM period
-      are 10 or 20 milliseconds.
   label:
     type: string
     description: |
       Human readable string describing the Buzzer. It can be used by an
       application to identify this Buzzer or to retrieve its number/index
       (i.e. child node number) on the parent device.
+
+  default-frequency:
+    required: true
+    type: int
+    description: |
+      The frequency of the buzzer in Hertz.
+    default: 1000000
+
+  default-volume:
+    required: true
+    type: int
+    description: |
+      Number of volume levels supported by the buzzer. range is 0-100.
+    default: 50

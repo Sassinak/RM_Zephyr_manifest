@@ -1,0 +1,2 @@
+source "Kconfig.zephyr"
+source "../../Engineer-manifest/drivers/buzzer/Kconfig"

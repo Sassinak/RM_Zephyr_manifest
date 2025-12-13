@@ -1,0 +1,20 @@
+cmake_minimum_required(VERSION 3.20)
+
+set(BOARD damiao_mc02)
+find_package(Zephyr REQUIRED HINTS $ENV{ZEPHYR_BASE})
+project(buzzer)
+
+list(APPEND DTC_BINDINGS_DIRS
+    /home/sassinak/Engineer-workspace/Engineer-manifest/dts/bindings/buzzer
+)
+
+target_sources(app PRIVATE 
+    src/main.c
+    /home/sassinak/Engineer-workspace/Engineer-manifest/drivers/buzzer/MLT5020_pwm.c
+)
+target_include_directories(app PRIVATE include)
+
+target_include_directories(app PRIVATE
+    include
+    /home/sassinak/Engineer-workspace/Engineer-manifest/drivers/buzzer
+)

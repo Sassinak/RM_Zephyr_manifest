@@ -20,27 +20,17 @@ extern "C"
 
     struct note_duration
     {
-        int note;           /* Hz; 0=休止符 */
-        int duration;       /* 毫秒：当 pace==0 时使用 */
-        int div;            /* 乐谱分母：1=全,2=二分,4=四分,8=八分...; 负数=附点；当 pace>0 时使用 */
+        int note;           // 频率，单位 Hz，0 表示休止符
+        int duration;       
+        int div;            
     };
 
     struct song_config
     {
         const struct note_duration *notes;
         uint32_t length;
-        uint8_t pace;       /* 0=按毫秒; >0=BPM */
-        int8_t  beat_unit;  /* 每拍对应的音符：正值=分母(如4)，负值=附点该分母(如-4)；0=默认4 */
     };
 
-    /**
-     * @typedef buzzer_api_set_freq
-     * @brief Callback API for set the frequency and volume of the buzzer.
-     *
-     */
-    typedef int (*buzzer_api_set_config)(const struct device *dev,
-                                       uint32_t freq,
-                                       uint8_t volume);
 
     /**
      * @typedef buzzer_api_play_note
@@ -55,40 +45,55 @@ extern "C"
      *
      */
     typedef int (*buzzer_api_play_song)(const struct device *dev,
-                                        struct song_config *song_cfg);
+                                        const struct song_config *song_cfg);
+
+
+    typedef int (*buzzer_api_stop)(const struct device *dev);
+
+    typedef int (*buzzer_api_start)(const struct device *dev);
 
     struct buzzer_driver_api
     {
-        buzzer_api_set_config set_config;
-        buzzer_api_play_note play_note;
-        buzzer_api_play_song play_song;
+        buzzer_api_play_note buzzer_play_note;
+        buzzer_api_play_song buzzer_play_song;
+        buzzer_api_stop buzzer_stop;
+        buzzer_api_start buzzer_start;
     };
-
-    static inline int buzzer_set_config(const struct device *dev, uint32_t freq, uint8_t volume)
-    {
-        const struct buzzer_driver_api *api = (const struct buzzer_driver_api *)dev->api;
-        if (!api || api->set_config == NULL) {
-            return -ENOSYS;
-        }
-        return api->set_config(dev, freq, volume);
-    }
 
     static inline int buzzer_play_note(const struct device *dev, const struct note_duration *note_cfg)
     {
         const struct buzzer_driver_api *api = (const struct buzzer_driver_api *)dev->api;
-        if (!api || api->play_note == NULL) {
+        if (!api || api->buzzer_play_note == NULL) {
             return -ENOSYS;
         }
-        return api->play_note(dev, note_cfg);
+        return api->buzzer_play_note(dev, note_cfg);
     }
 
-    static inline int buzzer_play_song(const struct device *dev, struct song_config *song_cfg)
+    static inline int buzzer_play_song(const struct device *dev, const struct song_config *song_cfg)
     {
         const struct buzzer_driver_api *api = (const struct buzzer_driver_api *)dev->api;
-        if (!api || api->play_song == NULL) {
+        if (!api || api->buzzer_play_song == NULL) {
             return -ENOSYS;
         }
-        return api->play_song(dev, song_cfg);
+        return api->buzzer_play_song(dev, song_cfg);
+    }
+
+    static inline int buzzer_stop(const struct device *dev)
+    {
+        const struct buzzer_driver_api *api = (const struct buzzer_driver_api *)dev->api;
+        if (!api || api->buzzer_stop == NULL) {
+            return -ENOSYS;
+        }
+        return api->buzzer_stop(dev);
+    }
+
+    static inline int buzzer_start(const struct device *dev)
+    {
+        const struct buzzer_driver_api *api = (const struct buzzer_driver_api *)dev->api;
+        if (!api || api->buzzer_start == NULL) {
+            return -ENOSYS;
+        }
+        return api->buzzer_start(dev);
     }
 
 #ifdef __cplusplus
