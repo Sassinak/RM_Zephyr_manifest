@@ -1,0 +1,74 @@
+# Copyright (c) 2025 Sassinak
+# SPDX-License-Identifier: Apache-2.0
+
+description: 
+  Custom CAN-controlled Motor instance
+
+compatible: "rp,can-motor"
+
+properties:
+
+  can-bus:
+    type: phandle
+    required: true
+    description: |
+      Reference to the CAN controller used to communicate with this motor.
+      On STM32H7 this is typically one of: &fdcan1, &fdcan2, &fdcan3
+      (compatible "st,stm32h7-fdcan").
+
+  tx-id:
+    type: int
+    required: true
+    description: |
+      CAN identifier used when sending commands to the motor.
+      By default this is interpreted as an 11-bit (standard) ID unless
+      the 'extended-id' property is present.
+
+  rx-id:
+    type: int
+    required: true
+    description: |
+      CAN identifier expected in frames received from the motor.
+      If omitted, the driver may assume it is the same as 'tx-id' or
+      derive it from the motor model.
+
+  can-fd:
+    type: boolean
+    description: |
+      Enable CAN FD framing for this motor (up to 64 data bytes).
+      If absent, classic CAN (up to 8 data bytes) is assumed.
+
+  motor-id:
+    type: string
+    required: true
+    description: |
+      Identifier of the motor type. this is the unique id of motor!!!. ex: "chassis_FL"
+
+  motor-type:
+    type: string
+    enum:
+      - "dji"   # 大疆电机
+      - "lk"    # 瓴控电机
+      - "dm"    # 达妙电机
+      - "ht"    # 海泰电机
+      - "bm"    # 本末电机
+    required: true
+    description: |
+      Type of the motor. 
+
+  control-mode:
+    type: string
+    enum:
+      - "torque"                # 扭矩控制模式
+      - "velocity"              # 速度控制模式
+      - "position"              # 位置控制模式
+      - "velocity_position"     # 速度+位置控制模式
+      - "MIT"                   # MIT控制模式
+    description: |
+      Control mode of the motor.
+
+  label:
+    type: string
+    description: |
+      Human readable string describing the motor instance.
+

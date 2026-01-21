@@ -8,5 +8,9 @@ zephyr_syscall_include_directories(include)  # 让Zephyr系统调用器处理sys
 
 zephyr_include_directories(include)  # 将 include 目录加入 Zephyr 的全局头文件搜索路径
 
-add_subdirectory(include)
+set(BREEZE_ROOT ${CMAKE_CURRENT_SOURCE_DIR} CACHE PATH "Breeze root directory")
+set(bindings_DIR ${BREEZE_ROOT}/dts/bindings CACHE PATH "DTS bindings directory")
+set(self_driver_DIR ${BREEZE_ROOT}/drivers CACHE PATH "Drivers directory")
+
+add_subdirectory(drivers)
 add_subdirectory(lib)

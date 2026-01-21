@@ -1,0 +1,26 @@
+/*dts-test-motor*/
+/ {
+    chassis_FL: motor0 {
+        compatible = "rp,can-motor";
+        status = "okay";
+        can-bus = <&fdcan1>;
+        tx-id = <0x200>;
+        rx-id = <0x201>;
+        motor-id = "chassis_FL";
+        motor-type = "dji";
+        control-mode = "torque";
+        label = "chassis_FL";
+    };
+
+    chassis_FR: motor1 {
+        compatible = "rp,can-motor";
+        status = "okay";
+        can-bus = <&fdcan1>;
+        tx-id = <0x200>;
+        rx-id = <0x202>;
+        motor-id = "chassis_FR";
+        motor-type = "dji";
+        control-mode = "torque";
+        label = "chassis_FR";
+    };
+};

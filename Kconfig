@@ -1,1 +1,1 @@
-source "drivers/buzzer/Kconfig"
+rsource "drivers/buzzer/Kconfig"
