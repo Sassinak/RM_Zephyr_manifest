@@ -1,0 +1,52 @@
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+#ifndef ENGINEER_MANIFEST_INCLUDE_DRIVERS_CAN_RX_MANAGER_H_
+#define ENGINEER_MANIFEST_INCLUDE_DRIVERS_CAN_RX_MANAGER_H_
+
+#include <zephyr/device.h>
+#include <zephyr/drivers/can.h>
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+typedef void (*rp_can_rx_handler_t)(const struct can_frame *frame, void *user_data);
+
+/**
+ * @brief Register a software RX handler inside a CAN RX manager.
+ *
+ * The manager owns the hardware RX filter(s) and a message queue. It receives CAN frames
+ * and dispatches them to registered handlers by matching @p filter.
+ *
+ * @param mgr      CAN RX manager device.
+ * @param filter   CAN filter used for software matching (standard/extended is controlled by flags).
+ * @param handler  Called in manager RX thread context.
+ * @param user_data Opaque pointer passed to handler.
+ *
+ * @retval >=0 Listener ID (can be used for unregister).
+ * @retval -EINVAL Invalid arguments.
+ * @retval -ENODEV Manager not ready.
+ * @retval -ENOSPC No free listener slots.
+ */
+int rp_can_rx_manager_register(const struct device *mgr, const struct can_filter *filter,
+                              rp_can_rx_handler_t handler, void *user_data);
+
+/**
+ * @brief Unregister a previously registered listener.
+ *
+ * @param mgr CAN RX manager device.
+ * @param listener_id Listener ID returned by rp_can_rx_manager_register().
+ *
+ * @retval 0 on success.
+ * @retval -EINVAL Invalid arguments.
+ * @retval -ENOENT Listener not found.
+ */
+int rp_can_rx_manager_unregister(const struct device *mgr, int listener_id);
+
+#ifdef __cplusplus
+}
+#endif
+
+#endif /* ENGINEER_MANIFEST_INCLUDE_DRIVERS_CAN_RX_MANAGER_H_ */

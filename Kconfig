@@ -1,1 +1,3 @@
 rsource "drivers/buzzer/Kconfig"
+rsource "drivers/can_rx_manager/Kconfig"
+rsource "drivers/motor/Kconfig"

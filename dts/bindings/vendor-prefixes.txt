@@ -1,0 +1,4 @@
+# Custom vendor prefixes for Engineer-manifest
+# Format: <prefix>\t<Vendor name>
+
+rp	RobotPilots-SZU

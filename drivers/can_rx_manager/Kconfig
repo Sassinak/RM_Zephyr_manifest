@@ -1,0 +1,56 @@
+# SPDX-License-Identifier: Apache-2.0
+
+menuconfig CAN_RX_MANAGER
+    bool "CAN RX manager"
+    default n
+    depends on CAN
+    help
+      Enable per-CAN-bus RX manager which receives frames into a message queue and dispatches
+      them to registered software handlers.
+
+if CAN_RX_MANAGER
+
+config CAN_RX_MANAGER_INIT_PRIORITY
+        int "Init priority"
+        default 90
+        range 0 99
+        help
+            Device init priority for the CAN RX manager.
+            Must be greater (later) than the CAN controller init priority.
+
+config CAN_RX_MANAGER_MAX_LISTENERS
+    int "Max number of registered listeners"
+    default 64
+    range 1 256
+
+config CAN_RX_MANAGER_RX_MSGQ_LEN
+    int "RX message queue length"
+    default 128
+    range 4 1024
+
+config CAN_RX_MANAGER_RX_STACK_SIZE
+    int "RX thread stack size"
+    default 2048
+    range 512 16384
+
+config CAN_RX_MANAGER_RX_THREAD_PRIO
+    int "RX thread priority (lower is higher)"
+    default 2
+    range 0 15
+
+config CAN_RX_MANAGER_MSGQ_MONITOR
+        bool "Monitor RX msgq drops (msgq full)"
+        default n
+        help
+            Counts CAN frames dropped because the RX message queue is full (k_msgq_put() failed from
+            ISR context). The RX thread will log warnings when drops occur.
+
+config CAN_RX_MANAGER_MSGQ_WARN_EVERY_N_DROPS
+        int "Warn every N dropped frames"
+        default 1
+        range 1 1000000
+        depends on CAN_RX_MANAGER_MSGQ_MONITOR
+        help
+            Emit a LOG_WRN each time the cumulative drop counter increases by N.
+
+endif # CAN_RX_MANAGER

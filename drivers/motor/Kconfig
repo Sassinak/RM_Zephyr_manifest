@@ -1,0 +1,24 @@
+menuconfig MOTOR
+    bool "Motor drivers"
+    default n
+    depends on CAN
+    select CAN_RX_MANAGER
+
+if MOTOR
+
+config MOTOR_INIT_PRIORITY
+        int "Init priority"
+        default 91
+        range 0 99
+        help
+            Device init priority for motor drivers.
+            Must be greater (later) than the CAN controller init priority.
+
+config MOTOR_LOG_LEVEL
+    int "Motor log level"
+    default 3
+    range 0 4
+    help
+      Log level for motor drivers (0=none, 4=debug).
+
+endif # MOTOR

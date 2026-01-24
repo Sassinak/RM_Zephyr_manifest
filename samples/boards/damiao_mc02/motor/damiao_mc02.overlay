@@ -1,26 +1,36 @@
 /*dts-test-motor*/
 / {
-    chassis_FL: motor0 {
-        compatible = "rp,can-motor";
+    can_rx_mgr1: can_rx_mgr1 {
+        compatible = "rp,can-rx-manager";
         status = "okay";
         can-bus = <&fdcan1>;
+        label = "can_rx_mgr1";
+    };
+
+    chassis_FL:motor1{
+        compatible = "rp,dji-can-motor";
+        status = "okay";
+        can-bus = <&fdcan1>;
+        rx-manager = <&can_rx_mgr1>;
         tx-id = <0x200>;
         rx-id = <0x201>;
         motor-id = "chassis_FL";
-        motor-type = "dji";
-        control-mode = "torque";
         label = "chassis_FL";
+        control-mode = "torque";
     };
 
-    chassis_FR: motor1 {
-        compatible = "rp,can-motor";
+    chassis_FR:motor2{
+        compatible = "rp,dji-can-motor";
         status = "okay";
         can-bus = <&fdcan1>;
+        rx-manager = <&can_rx_mgr1>;
         tx-id = <0x200>;
         rx-id = <0x202>;
         motor-id = "chassis_FR";
-        motor-type = "dji";
-        control-mode = "torque";
         label = "chassis_FR";
+        control-mode = "torque";
     };
+
+
+
 };
