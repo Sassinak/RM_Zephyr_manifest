@@ -17,6 +17,8 @@
         motor-id = "chassis_FL";
         label = "chassis_FL";
         control-mode = "torque";
+        motor-encoder = <8192>;
+        motor-transmission-ratio = <19>;
     };
 
     chassis_FR:motor2{
@@ -29,6 +31,8 @@
         motor-id = "chassis_FR";
         label = "chassis_FR";
         control-mode = "torque";
+        motor-encoder = <8192>;
+        motor-transmission-ratio = <19>;
     };
 
 
