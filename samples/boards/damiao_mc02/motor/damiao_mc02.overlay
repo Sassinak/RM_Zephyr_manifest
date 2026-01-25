@@ -15,6 +15,7 @@
         tx-id = <0x200>;
         rx-id = <0x201>;
         motor-id = "chassis_FL";
+        motor-type = "M3508";
         label = "chassis_FL";
         control-mode = "torque";
         motor-encoder = <8192>;
@@ -29,6 +30,7 @@
         tx-id = <0x200>;
         rx-id = <0x202>;
         motor-id = "chassis_FR";
+        motor-type = "M3508";
         label = "chassis_FR";
         control-mode = "torque";
         motor-encoder = <8192>;

@@ -1,15 +1,14 @@
 # Copyright (c) 2025 Sassinak
 # SPDX-License-Identifier: Apache-2.0
+description: Custom CAN TX manager (one per CAN bus).
 
-description: Custom CAN RX manager (one per CAN bus).
-
-compatible: "rp,can-rx-manager"
+compatible: "rp,can-tx-manager"
 
 properties:
   can-bus:
     type: phandle
     required: true
-    description: Reference to the CAN controller used for receiving frames.
+    description: Reference to the CAN controller used for transmitting frames.
 
   label:
     type: string

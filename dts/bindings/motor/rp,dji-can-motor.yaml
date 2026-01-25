@@ -54,6 +54,17 @@ properties:
     description: |
       Unique identifier string for application use (e.g. "chassis_FL").
 
+  motor-type:             # 设计这个字段是因为不同类型的电机，接收的数据格式不一样
+    type: string
+    required: true
+    enum:
+      - "unknown"
+      - "M3508"
+      - "M2006"
+      - "M6020"
+    description: |
+      Type of DJI motor.    
+
   motor-encoder:
     type: int
     required: true

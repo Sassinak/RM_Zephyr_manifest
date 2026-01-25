@@ -41,6 +41,7 @@ typedef struct motor_dji_cfg_t {
     uint16_t tx_id;
     uint16_t rx_id;
     const char *motor_id;
+    int8_t motor_type;
     int8_t control_mode;
     uint16_t motor_encoder;
     uint8_t transmission_ratio;
@@ -98,13 +99,59 @@ static void motor_dji_can_rx_handler(const struct can_frame *frame, void *user_d
 
     k_spinlock_key_t key = k_spin_lock(&motor->lock);           // 加锁保护 motor_data
     motor->motor_data.heartbeat_status.is_alive = true;
-
-    motor->motor_data.Rx_data.angle   = (int32_t)(uint16_t)((frame->data[0] << 8) | frame->data[1]);
-    motor->motor_data.Rx_data.speed   = (int16_t)((frame->data[2] << 8)  | frame->data[3]);
-    motor->motor_data.Rx_data.current = (int16_t)((frame->data[4] << 8)  | frame->data[5]);
-
+    const motor_dji_cfg_t *cfg = (const motor_dji_cfg_t *)motor->motor_data.interface_ptr;  // 回勾解引用获取当前设备的配置
+    if( cfg == NULL) {
+        LOG_ERR("[dji_motor_err] rx handle cfg NULL");
+        k_spin_unlock(&motor->lock, key);
+        return;
+    }
+        
+    /* 解析 CAN 帧数据 */
+    switch (cfg->motor_type)
+    {
+        case 1: // MOTOR_DJI_TYPE_M3508
+        {
+            motor->motor_data.Rx_data.angle = (uint16_t)((frame->data[0] << 8) | frame->data[1]);
+            motor->motor_data.Rx_data.speed = (int16_t)((frame->data[2] << 8) | frame->data[3]);
+            motor->motor_data.Rx_data.current = (int16_t)((frame->data[4] << 8) | frame->data[5]);
+            motor->motor_data.Rx_data.specific_data.m3508.temp = (int16_t)frame->data[6];
+            motor->motor_data.Rx_data.valid_mask = (uint32_t)(MOTOR_RX_VALID_ANGLE |
+                                                            MOTOR_RX_VALID_SPEED |
+                                                            MOTOR_RX_VALID_CURRENT |
+                                                            MOTOR_RX_VALID_TEMP);
+            break;
+        }
+        case 2: // MOTOR_DJI_TYPE_M2006
+        {
+            motor->motor_data.Rx_data.angle = (uint16_t)((frame->data[0] << 8) | frame->data[1]);
+            motor->motor_data.Rx_data.speed = (int16_t)((frame->data[2] << 8) | frame->data[3]);
+            motor->motor_data.Rx_data.current = (int16_t)((frame->data[4] << 8) | frame->data[5]);
+            motor->motor_data.Rx_data.valid_mask = (uint32_t)(MOTOR_RX_VALID_ANGLE |
+                                                            MOTOR_RX_VALID_SPEED |
+                                                            MOTOR_RX_VALID_CURRENT);
+            break;
+        }
+        case 3: // MOTOR_DJI_TYPE_M6020
+        {
+            motor->motor_data.Rx_data.angle = (uint16_t)((frame->data[0] << 8) | frame->data[1]);
+            motor->motor_data.Rx_data.speed = (int16_t)((frame->data[2] << 8) | frame->data[3]);
+            motor->motor_data.Rx_data.current = (int16_t)((frame->data[4] << 8) | frame->data[5]);
+            motor->motor_data.Rx_data.specific_data.m6020.temp = (int16_t)frame->data[6];
+            motor->motor_data.Rx_data.valid_mask = (uint32_t)(MOTOR_RX_VALID_ANGLE |
+                                                            MOTOR_RX_VALID_SPEED |
+                                                            MOTOR_RX_VALID_CURRENT |
+                                                            MOTOR_RX_VALID_TEMP);
+            break;
+        }
+        case 0: // MOTOR_UNKNOWN
+        default:
+        {
+            memset(&motor->motor_data.Rx_data, 0, sizeof(motor->motor_data.Rx_data));
+            LOG_ERR("[dji_motor_err] rx handle unknown motor type: %d", cfg->motor_type);
+            break;
+        }
+    }
     motor->motor_data.heartbeat_status.heartbeat_tick = (uint64_t)k_uptime_get();       // 更新心跳时间戳
-
     k_spin_unlock(&motor->lock, key);                           // 解锁
 }
 
@@ -128,7 +175,7 @@ int motor_dji_update_heartbeat_status(const struct device *dev)
         return -EINVAL;
     }
 
-    const motor_dji_cfg_t *cfg = dev->config;
+    const motor_dji_cfg_t *cfg = (const motor_dji_cfg_t *)data->motor_data.interface_ptr;
     uint64_t current_tick = (uint64_t)k_uptime_get();
 
     k_spinlock_key_t key = k_spin_lock(&data->lock);
@@ -211,12 +258,32 @@ static int motor_dji_can_register_motor(const struct device *dev)
     data->rx_filter_id = ret;
     data->motor_data.Tx_data = 0;
     data->motor_data.interface_ptr = (void *)cfg;
+    data->motor_data.Rx_data.valid_mask = 0U;
     data->motor_data.heartbeat_status.is_alive = false;
     data->motor_data.heartbeat_status.heartbeat_tick = 0;
 
     return 0;
 }
 
+/**
+ * @brief 暴露给中间件获取电机数据的接口，Atention!!!!!:
+ *        这里直接返回了 Rx_data 的指针，上层不可更改
+ *        此外因为大部分mcu都是单核的，主线程和中断不会并发执行，所以是安全的
+ *        如果在多核平台上使用，请自行加锁保护！！！！！或者改成双缓冲及快照
+ * 
+ * @param dev 
+ * @return const sMotor_Receive_Data_t* 
+ */
+static const sMotor_Receive_Data_t *motor_dji_can_get_rxdata(const struct device *dev)
+{
+    motor_dji_data_t *data = dev->data;
+    if (data == NULL) {
+        LOG_WRN("[dji_motor_err] get_rxdata dev NULL");
+        return NULL;
+    }
+
+    return &data->motor_data.Rx_data;
+}
 
 static int motor_dji_can_transfer(const struct device *dev)
 {
@@ -256,6 +323,7 @@ static const motor_driver_api_t motor_dji_can_api = {
     .register_motor = motor_dji_can_register_motor,
     .transfer = motor_dji_can_transfer,
     .get_heartbeat_status = motor_dji_can_get_heartbeat_status,
+    .get_rxdata = motor_dji_can_get_rxdata,
 };
 
 
@@ -265,11 +333,15 @@ static const motor_driver_api_t motor_dji_can_api = {
 #define MOTOR_DJI_CONTROL_MODE(inst) \
     COND_CODE_1(DT_INST_NODE_HAS_PROP(inst, control_mode), (DT_INST_ENUM_IDX(inst, control_mode)), (-1))
 
+#define MOTOR_DJI_TYPE(inst) \
+    COND_CODE_1(DT_INST_NODE_HAS_PROP(inst, motor_type), (DT_INST_ENUM_IDX(inst, motor_type)), (-1))
+
 #define MOTOR_DJI_DEFINE(inst) \
     static const motor_dji_cfg_t motor_dji_cfg_##inst = { \
         .tx_id = (uint16_t)DT_INST_PROP(inst, tx_id), \
         .rx_id = (uint16_t)DT_INST_PROP(inst, rx_id), \
         .motor_id = DT_INST_PROP(inst, motor_id), \
+        .motor_type = (int8_t)MOTOR_DJI_TYPE(inst), \
         .control_mode = (int8_t)MOTOR_DJI_CONTROL_MODE(inst), \
         .motor_encoder = (uint16_t)DT_INST_PROP(inst, motor_encoder), \
         .transmission_ratio = (uint8_t)DT_INST_PROP(inst, motor_transmission_ratio), \
@@ -292,6 +364,7 @@ static const motor_driver_api_t motor_dji_can_api = {
         data->rx_filter_id = -1; \
         memset(&data->motor_data, 0, sizeof(data->motor_data)); \
         data->motor_data.interface_ptr = (void *)cfg; \
+        data->motor_data.Rx_data.valid_mask = 0U; \
         data->motor_data.heartbeat_status.is_alive = false; \
         data->motor_data.heartbeat_status.heartbeat_tick = 0; \
         IF_ENABLED(CONFIG_MOTOR_DJI_HEARTBEAT_AUTOCHECK, ( \
