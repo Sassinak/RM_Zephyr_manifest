@@ -54,6 +54,18 @@ properties:
     description: |
       Unique identifier string for application use (e.g. "chassis_FL").
 
+  motor-encoder:
+    type: int
+    required: true
+    description: |
+      Number of encoder counts per revolution for the motor.
+
+  motor-transmission-ratio:
+    type: int
+    required: true
+    description: |
+      Gearbox transmission ratio (output shaft speed / motor speed).ex: 1:19 -> 19 
+
   control-mode:
     type: string
     required: true

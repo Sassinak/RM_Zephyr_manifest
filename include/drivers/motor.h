@@ -47,46 +47,39 @@ extern "C"
      * @typedef motor_api_transfer
      * @brief transifer data by unique interface
      */
-    typedef int (*motor_api_transfer)(const struct sMotor_data_t *motor_);
+    typedef int (*motor_api_transfer)(const struct device *dev);
 
     /**
      * @typedef motor_api_get_heartbeat_status
      * @brief application/middleware get motor heartbeat status
      * 
      */
-    typedef int (*motor_api_get_heartbeat_status)(const char *motor_id);
+    typedef int (*motor_api_get_heartbeat_status)(const struct device *dev);
 
-    /**
-     * @typedef motor_api_update_recevie_data
-     * @brief  application/middleware update motor receive data when motor register motor insrance will
-     *          update automatically. this api is used for update receive data hardly
-     * 
-     */
-    typedef int (*motor_api_update_receive_data)(const struct sMotor_data_t *motor_);
-
-    /**
-     * @typedef motor_api_calculate_baudrate
-     * @brief calculate motor's interface baudrate 
-     *
-     */
-    typedef int (*motor_api_calculate_baudrate)(const struct sMotor_data_t *motor_);
 
     typedef struct motor_driver_api_t
     {
         motor_api_register register_motor;
         motor_api_transfer transfer;
         motor_api_get_heartbeat_status get_heartbeat_status;
-        motor_api_update_receive_data update_receive_data;
-        motor_api_calculate_baudrate calculate_baudrate;
     } motor_driver_api_t;
 
-    static inline int register_dji_motor(const struct device *dev)
+    static inline int register_motor(const struct device *dev)
     {
         const struct motor_driver_api_t *api = (const struct motor_driver_api_t *)dev->api;
         if(!api || api->register_motor == NULL) {
             return -ENOSYS;
         }
         return api->register_motor(dev);
+    }
+
+    static inline int get_motor_heartbeat_status(const struct device *dev)
+    {
+        const struct motor_driver_api_t *api = (const struct motor_driver_api_t *)dev->api;
+        if(!api || api->get_heartbeat_status == NULL) {
+            return -ENOSYS;
+        }
+        return api->get_heartbeat_status(dev);
     }
 
 #ifdef __cplusplus

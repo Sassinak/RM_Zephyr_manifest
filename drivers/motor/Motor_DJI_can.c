@@ -25,6 +25,14 @@ LOG_MODULE_REGISTER(motor_dji_can);
 
 #include <drivers/can_rx_manager.h>
 
+/* Fallbacks for static analysis (Zephyr builds define these via autoconf.h) */
+#ifndef CONFIG_MOTOR_DJI_HEARTBEAT_OFFLINE_TIMEOUT_MS
+#define CONFIG_MOTOR_DJI_HEARTBEAT_OFFLINE_TIMEOUT_MS 100
+#endif
+#ifndef CONFIG_MOTOR_DJI_HEARTBEAT_POLL_PERIOD_MS
+#define CONFIG_MOTOR_DJI_HEARTBEAT_POLL_PERIOD_MS 10
+#endif
+
 /*
  * motor-id: DTS string -> const char*
  * control-mode: DTS enum -> DT_ENUM_IDX
@@ -34,6 +42,8 @@ typedef struct motor_dji_cfg_t {
     uint16_t rx_id;
     const char *motor_id;
     int8_t control_mode;
+    uint16_t motor_encoder;
+    uint8_t transmission_ratio;
     const struct device *can_dev;
     const struct device *rx_mgr;
 } motor_dji_cfg_t;
@@ -41,11 +51,37 @@ typedef struct motor_dji_cfg_t {
 typedef struct motor_dji_data_t
 {
     sMotor_data_t motor_data;
+    struct k_spinlock lock;                 // 保护 motor_data 的自旋锁，防止接收更新和心跳检测冲突
     bool registered;
     int rx_filter_id;
+#if defined(CONFIG_MOTOR_DJI_HEARTBEAT_AUTOCHECK)
+    const struct device *dev_self;          // 指向自身设备的指针，用于心跳自动检测
+    struct k_work_delayable hb_work;        // 心跳自动检测的延时工作
+#endif
 } motor_dji_data_t;
 
+int motor_dji_update_heartbeat_status(const struct device *dev);
 
+#if defined(CONFIG_MOTOR_DJI_HEARTBEAT_AUTOCHECK)
+static void motor_dji_hb_work_handler(struct k_work *work)
+{
+    struct k_work_delayable *dwork = k_work_delayable_from_work(work);           // 获取 k_work_delayable 指针
+    motor_dji_data_t *data = CONTAINER_OF(dwork, motor_dji_data_t, hb_work);    // 获取 motor_dji_data_t 指针
+
+    if (data->dev_self != NULL) {
+        (void)motor_dji_update_heartbeat_status(data->dev_self);
+        (void)k_work_schedule(&data->hb_work, K_MSEC(CONFIG_MOTOR_DJI_HEARTBEAT_POLL_PERIOD_MS));   // 重新调度下一次心跳检测
+    }
+}
+#endif
+
+
+/**
+ * @brief CAN 接收回调函数，在注册电机之后将会自动开始接收对应 ID 的 CAN 帧
+ * 
+ * @param frame 
+ * @param user_data 
+ */
 static void motor_dji_can_rx_handler(const struct can_frame *frame, void *user_data)
 {
     motor_dji_data_t *motor = (motor_dji_data_t *)user_data;
@@ -60,14 +96,74 @@ static void motor_dji_can_rx_handler(const struct can_frame *frame, void *user_d
         return;
     }
 
-    motor->motor_data.Rx_data.angle   = (uint16_t)((frame->data[0] << 8) | frame->data[1]);
+    k_spinlock_key_t key = k_spin_lock(&motor->lock);           // 加锁保护 motor_data
+    motor->motor_data.heartbeat_status.is_alive = true;
+
+    motor->motor_data.Rx_data.angle   = (int32_t)(uint16_t)((frame->data[0] << 8) | frame->data[1]);
     motor->motor_data.Rx_data.speed   = (int16_t)((frame->data[2] << 8)  | frame->data[3]);
     motor->motor_data.Rx_data.current = (int16_t)((frame->data[4] << 8)  | frame->data[5]);
 
-    motor->motor_data.heartbeat_status.heartbeat_tick = (uint64_t)k_uptime_get();
-    motor->motor_data.heartbeat_status.is_alive = true;
+    motor->motor_data.heartbeat_status.heartbeat_tick = (uint64_t)k_uptime_get();       // 更新心跳时间戳
+
+    k_spin_unlock(&motor->lock, key);                           // 解锁
 }
 
+/**
+ * @brief dji motor 心跳状态更新函数，供应用层/中间件调用以获取最新心跳状态.
+ *        这个函数既可以在应用层创建线程调用，也可以启动自动检测（CONFIG_MOTOR_DJI_HEARTBEAT_AUTOCHECK）
+ *
+ * @param dev
+ * @return int
+ */
+int motor_dji_update_heartbeat_status(const struct device *dev)
+{
+    if (dev == NULL) {
+        LOG_ERR("[dji_motor_err] update heartbeat Invalid arguments");
+        return -EINVAL;
+    }
+
+    motor_dji_data_t *data = dev->data;
+    if (data == NULL) {
+        LOG_ERR("[dji_motor_err] update heartbeat data NULL");
+        return -EINVAL;
+    }
+
+    const motor_dji_cfg_t *cfg = dev->config;
+    uint64_t current_tick = (uint64_t)k_uptime_get();
+
+    k_spinlock_key_t key = k_spin_lock(&data->lock);
+    uint64_t last_tick = data->motor_data.heartbeat_status.heartbeat_tick;
+    bool prev_alive = data->motor_data.heartbeat_status.is_alive;
+
+    /* 尚未收到过任何帧时，不做掉线告警；Rx_data 默认保持为 0 */
+    if (last_tick == 0U) {
+        k_spin_unlock(&data->lock, key);
+        return 0;
+    }
+
+    uint64_t elapsed = current_tick - last_tick;
+
+    /* 如果超过阈值没有收到心跳，则认为电机掉线：清零接收值并在离线边沿告警一次 */
+    if (elapsed > (uint64_t)CONFIG_MOTOR_DJI_HEARTBEAT_OFFLINE_TIMEOUT_MS) {
+        data->motor_data.heartbeat_status.is_alive = false;
+
+        /* 只有从在线->离线时，才清零并告警；避免每次轮询刷屏 */
+        if (prev_alive) {
+            memset(&data->motor_data.Rx_data, 0, sizeof(data->motor_data.Rx_data));
+            LOG_ERR("[dji_motor_err] motor offline (%s, rx=0x%03x): no CAN frames for %llu ms",
+                    (cfg != NULL && cfg->motor_id != NULL) ? cfg->motor_id : "unknown",
+                    (cfg != NULL) ? (unsigned int)cfg->rx_id : 0U,
+                    (unsigned long long)elapsed);
+        }
+    } else {
+        /* 心跳在窗口内：确保在线 */
+        data->motor_data.heartbeat_status.is_alive = true;
+    }
+
+    k_spin_unlock(&data->lock, key);
+
+    return 0;
+}
 
 /**
  * @brief 单电机注册接口，通过 motor_id 识别电机实例，配置了can的接收过滤器
@@ -122,40 +218,44 @@ static int motor_dji_can_register_motor(const struct device *dev)
 }
 
 
-static int motor_dji_can_transfer(const struct sMotor_data_t *motor_)
+static int motor_dji_can_transfer(const struct device *dev)
 {
-    ARG_UNUSED(motor_);
+    ARG_UNUSED(dev);
     return -ENOSYS;
 }
 
 
-static int motor_dji_can_get_heartbeat_status(const char *motor_id)
+/**
+ * @brief 获取电机心跳状态接口，供应用层/中间件调用
+ * 
+ * @param dev 
+ * @return int 1: alive, 0: not alive, <0: error code
+ */
+static int motor_dji_can_get_heartbeat_status(const struct device *dev)
 {
-    ARG_UNUSED(motor_id);
-    return -ENOSYS;
+    int ret = motor_dji_update_heartbeat_status(dev);
+    if (ret < 0) {
+        return ret;
+    }
+
+    motor_dji_data_t *data = dev->data;
+    if (data == NULL) {
+        return -EINVAL;
+    }
+
+    k_spinlock_key_t key = k_spin_lock(&data->lock);
+    bool alive = data->motor_data.heartbeat_status.is_alive;
+    k_spin_unlock(&data->lock, key);
+
+    return alive ? 1 : 0;
 }
 
-
-static int motor_dji_can_update_receive_data(const struct sMotor_data_t *motor_)
-{
-    ARG_UNUSED(motor_);
-    return -ENOSYS;
-}
-
-
-static int motor_dji_can_calculate_baudrate(const struct sMotor_data_t *motor_)
-{
-    ARG_UNUSED(motor_);
-    return -ENOSYS;
-}
 
 
 static const motor_driver_api_t motor_dji_can_api = {
     .register_motor = motor_dji_can_register_motor,
     .transfer = motor_dji_can_transfer,
     .get_heartbeat_status = motor_dji_can_get_heartbeat_status,
-    .update_receive_data = motor_dji_can_update_receive_data,
-    .calculate_baudrate = motor_dji_can_calculate_baudrate,
 };
 
 
@@ -171,6 +271,8 @@ static const motor_driver_api_t motor_dji_can_api = {
         .rx_id = (uint16_t)DT_INST_PROP(inst, rx_id), \
         .motor_id = DT_INST_PROP(inst, motor_id), \
         .control_mode = (int8_t)MOTOR_DJI_CONTROL_MODE(inst), \
+        .motor_encoder = (uint16_t)DT_INST_PROP(inst, motor_encoder), \
+        .transmission_ratio = (uint8_t)DT_INST_PROP(inst, motor_transmission_ratio), \
         .can_dev = DEVICE_DT_GET(DT_INST_PHANDLE(inst, can_bus)), \
         .rx_mgr = COND_CODE_1(DT_INST_NODE_HAS_PROP(inst, rx_manager), \
                       (DEVICE_DT_GET(DT_INST_PHANDLE(inst, rx_manager))), (NULL)), \
@@ -192,6 +294,11 @@ static const motor_driver_api_t motor_dji_can_api = {
         data->motor_data.interface_ptr = (void *)cfg; \
         data->motor_data.heartbeat_status.is_alive = false; \
         data->motor_data.heartbeat_status.heartbeat_tick = 0; \
+        IF_ENABLED(CONFIG_MOTOR_DJI_HEARTBEAT_AUTOCHECK, ( \
+            data->dev_self = dev; \
+            k_work_init_delayable(&data->hb_work, motor_dji_hb_work_handler); \
+            (void)k_work_schedule(&data->hb_work, K_MSEC(CONFIG_MOTOR_DJI_HEARTBEAT_POLL_PERIOD_MS)); \
+        )) \
         return 0; \
     } \
     DEVICE_DT_INST_DEFINE(inst, motor_dji_can_init_##inst, NULL, &motor_dji_data_##inst, \
