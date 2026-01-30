@@ -1,5 +1,6 @@
 board:
   name: damiao_mc02
+  full_name: Damiao MC02
   vendor: damiao
   socs:
     - name: stm32h723xx

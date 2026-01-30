@@ -1,5 +1,7 @@
 /*
+ * Copyright (c) 2025 Sassinak
  * SPDX-License-Identifier: Apache-2.0
+ * author: Sassinak
  */
 
 #define DT_DRV_COMPAT rp_can_rx_manager

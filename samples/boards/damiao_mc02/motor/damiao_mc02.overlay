@@ -12,6 +12,7 @@
         status = "okay";
         can-bus = <&fdcan1>;
         rx-manager = <&can_rx_mgr1>;
+        tx-manager = <&can_tx_mgr1>;
         tx-id = <0x200>;
         rx-id = <0x201>;
         motor-id = "chassis_FL";
@@ -27,6 +28,7 @@
         status = "okay";
         can-bus = <&fdcan1>;
         rx-manager = <&can_rx_mgr1>;
+        tx-manager = <&can_tx_mgr1>;
         tx-id = <0x200>;
         rx-id = <0x202>;
         motor-id = "chassis_FR";

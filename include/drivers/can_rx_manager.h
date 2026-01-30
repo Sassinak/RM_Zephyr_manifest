@@ -1,9 +1,11 @@
 /*
+ * Copyright (c) 2025 Sassinak
  * SPDX-License-Identifier: Apache-2.0
+ * author: Sassinak
  */
 
-#ifndef ENGINEER_MANIFEST_INCLUDE_DRIVERS_CAN_RX_MANAGER_H_
-#define ENGINEER_MANIFEST_INCLUDE_DRIVERS_CAN_RX_MANAGER_H_
+#ifndef CAN_RX_MANAGER_H_
+#define CAN_RX_MANAGER_H_
 
 #include <zephyr/device.h>
 #include <zephyr/drivers/can.h>
@@ -45,8 +47,11 @@ int rp_can_rx_manager_register(const struct device *mgr, const struct can_filter
  */
 int rp_can_rx_manager_unregister(const struct device *mgr, int listener_id);
 
+// TODO 实现 bitrate 计算功能
+float rp_can_rx_manager_calculate_bitrate(const struct device *mgr);
+
 #ifdef __cplusplus
 }
 #endif
 
-#endif /* ENGINEER_MANIFEST_INCLUDE_DRIVERS_CAN_RX_MANAGER_H_ */
+#endif /* CAN_RX_MANAGER_H_ */
