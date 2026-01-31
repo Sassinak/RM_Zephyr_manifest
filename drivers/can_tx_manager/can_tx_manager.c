@@ -18,109 +18,277 @@
 
 #include <string.h>
 
+#define LOG_LEVEL 3
+LOG_MODULE_REGISTER(can_tx_manager);
+
+#ifdef CONFIG_CAN_TX_MANAGER
+
 typedef struct rp_can_tx_cfg {
     const struct device *can_dev;
 } rp_can_tx_cfg_t;
 
-typedef struct device_send_cfg {
+typedef struct device_sender_cfg {
     uint16_t tx_id;
     uint16_t rx_id;
-    uint8_t device_index;
-    device_send_cfg_t *next_device;
-} device_send_cfg_t;
+    bool used;
+    void *device;                               // 指向具体设备的指针
+    rp_tx_fillbuffer_cb_t fill_buffer_cb;       // 用于填充发送数据的回调函数
+} device_sender_cfg_t;
 
 typedef struct rp_can_tx_data {
-    device_send_cfg_t *device_list;
+    device_sender_cfg_t device_list[CONFIG_MAX_DEVICE_SENDERS];
+    struct can_frame *frame;                    // 实际管理的can帧
+    struct k_mutex lock;                         // 保护 data 的互斥体
+    uint8_t frame_num;                          // 发送帧的数量
 } rp_can_tx_data_t;
 
-// 新增节点
-device_send_cfg_t *device_send_cfg_add(device_send_cfg_t **head, uint16_t tx_id, uint16_t rx_id, uint8_t device_index)
+
+int rp_can_tx_manager_init(const struct device *dev)
 {
-    if (head == NULL)
-        return NULL;
-    device_send_cfg_t *node = (device_send_cfg_t *)k_malloc(sizeof(device_send_cfg_t));
-    if (!node)
-        return NULL;
-    node->tx_id = tx_id;
-    node->rx_id = rx_id;
-    node->device_index = device_index;
-    node->next_device = *head;
-    *head = node;
-    return node;
+    const rp_can_tx_cfg_t *cfg = dev->config;
+    struct rp_can_tx_data *data = dev->data;
+
+    if ((cfg == NULL) || (data == NULL)) {
+        return -EINVAL;
+    }
+
+    /* 安全初始化：不要对包含内核对象的结构做 memset，逐项初始化 */
+    (void)cfg;
+    for (int i = 0; i < CONFIG_MAX_DEVICE_SENDERS; i++) {
+        data->device_list[i].used = false;
+        data->device_list[i].tx_id = 0;
+        data->device_list[i].rx_id = 0;
+        data->device_list[i].fill_buffer_cb = NULL;
+    }
+    data->frame = k_malloc(MAX_CAN_FRAMES * sizeof(struct can_frame));      // 分配最大数量的 CAN 帧
+    if (data->frame == NULL)
+    {
+        LOG_ERR("[can_tx_manager]Failed to allocate memory for CAN frames");
+        return -ENOMEM;
+    }
+    data->frame_num = 0;
+    k_mutex_init(&data->lock);                                         // 初始化互斥体
+
+    return 0;
 }
 
-/*--------------------------------------Linked List Operations start-----------------------------------------------------------------*/
-// 查找节点（按tx_id和rx_id）
-device_send_cfg_t *device_send_cfg_find(device_send_cfg_t *head, uint16_t tx_id, uint16_t rx_id)
+/**
+ * @brief 注册一个 CAN 发送设备到 TX manager
+ * 
+ * @param mgr CAN TX manager 设备
+ * @param tx_id 发送的 CAN 帧 ID
+ * @param rx_id 接收的 CAN 帧 ID
+ * @param fill_buffer_cb 用于填充发送数据的回调函数
+ * @return int 返回注册的索引 ID，失败返回负值错误码
+ */
+int rp_can_tx_manager_register(const struct device *mgr, uint16_t tx_id, uint16_t rx_id, rp_tx_fillbuffer_cb_t fill_buffer_cb, void *user_data)
 {
-    device_send_cfg_t *cur = head;
-    while (cur)
+    if (!device_is_ready(mgr))
     {
-        if (cur->tx_id == tx_id && cur->rx_id == rx_id)
-        {
-            return cur;
+        LOG_ERR("[can_tx_manager]CAN TX manager device not ready");
+        return -ENODEV;
+    }
+
+    struct rp_can_tx_data *data = mgr->data;
+    if (data == NULL)
+    {
+        LOG_ERR("[can_tx_manager]CAN TX manager data is NULL");
+        return -EINVAL;
+    }
+    /* 保护并发访问：保持锁直到准备返回 */
+    k_mutex_lock(&data->lock, K_FOREVER);
+
+    if (data->frame == NULL) {
+        LOG_ERR("[can_tx_manager]CAN frames not initialized");
+        k_mutex_unlock(&data->lock);
+        return -EFAULT;
+    }
+
+    /* 检查是否已注册过相同的 tx_id */
+    bool found = false;
+    for (int f = 0; f < data->frame_num; f++) {
+        if (data->frame[f].id == tx_id) {
+            found = true;
+            break;
         }
-        cur = cur->next_device;
     }
-    return NULL;
-}
 
-// 删除节点（按tx_id和rx_id）
-bool device_send_cfg_delete(device_send_cfg_t **head, uint16_t tx_id, uint16_t rx_id)
-{
-    if (head == NULL || *head == NULL)
-        return false;
-    device_send_cfg_t *cur = *head, *prev = NULL;
-    while (cur)
-    {
-        if (cur->tx_id == tx_id && cur->rx_id == rx_id)
-        {
-            if (prev)
-            {
-                prev->next_device = cur->next_device;
-            }
-            else
-            {
-                *head = cur->next_device;
-            }
-            k_free(cur);
-            return true;
+    if (!found) {
+        if (data->frame_num >= CONFIG_MAX_CAN_FRAMES) {
+            LOG_ERR("[can_tx_manager]No space left for CAN frames");
+            k_mutex_unlock(&data->lock);
+            return -ENOSPC;
         }
-        prev = cur;
-        cur = cur->next_device;
+        memset(&data->frame[data->frame_num], 0, sizeof(struct can_frame));
+        data->frame[data->frame_num].id = tx_id;
+        data->frame_num++;
     }
-    return false;
+    for (int i = 0; i < CONFIG_MAX_DEVICE_SENDERS; i++) {
+        if (data->device_list[i].used) {
+            continue;
+        }
+        data->device_list[i].used = true;
+        data->device_list[i].tx_id = tx_id;
+        data->device_list[i].rx_id = rx_id;
+        data->device_list[i].device = user_data;
+        data->device_list[i].fill_buffer_cb = fill_buffer_cb;
+        k_mutex_unlock(&data->lock);
+        return i; /* 返回分配到的索引 */
+    }
+
+    /* 无空槽 */
+    k_mutex_unlock(&data->lock);
+    return -ENOSPC;
 }
 
-// 修改节点（按tx_id和rx_id查找，修改device_index）
-bool device_send_cfg_update(device_send_cfg_t *head, uint16_t tx_id, uint16_t rx_id, uint8_t new_device_index)
+/**
+ * @brief 注销一个已注册的 CAN 发送设备
+ * 
+ * @param mgr 
+ * @param tx_id 
+ * @param rx_id 
+ * @return int 
+ */
+int rp_can_tx_manager_unregister(const struct device *mgr, const uint16_t tx_id, const uint16_t rx_id)
 {
-    device_send_cfg_t *node = device_send_cfg_find(head, tx_id, rx_id);
-    if (node)
+    if (!device_is_ready(mgr))
     {
-        node->device_index = new_device_index;
-        return true;
+        LOG_ERR("[can_tx_manager]CAN TX manager device not ready");
+        return -ENODEV;
     }
-    return false;
+
+    struct rp_can_tx_data *data = mgr->data;
+    if (data == NULL)
+    {
+        LOG_ERR("[can_tx_manager]CAN TX manager data is NULL");
+        return -EINVAL;
+    }
+
+    k_mutex_lock(&data->lock, K_FOREVER);
+
+    for (int i = 0; i < CONFIG_MAX_DEVICE_SENDERS; i++) {
+        if (!data->device_list[i].used) {
+            continue;
+        }
+        if (data->device_list[i].tx_id == tx_id && data->device_list[i].rx_id == rx_id) {
+            data->device_list[i].used = false;
+            data->device_list[i].tx_id = 0;
+            data->device_list[i].rx_id = 0;
+            data->device_list[i].user_data = NULL;
+            data->device_list[i].fill_buffer_cb = NULL;
+            k_mutex_unlock(&data->lock);
+            return 0; /* 成功注销 */
+        }
+    }
+
+    k_mutex_unlock(&data->lock);
+    return -ENOENT; /* 未找到匹配的注册项 */
 }
 
-/*--------------------------------------Linked List Operations end-----------------------------------------------------------------*/
 
-int rp_can_tx_manager_send(const struct device *mgr, const struct can_frame *frame, const uint16_t tx_id, k_timeout_t timeout,
-                           can_tx_callback_t callback, void *user_data)
+int rp_can_tx_fillbuffer(uint16_t tx_id, struct can_frame *frame, rp_can_tx_data_t *data, void *user_datas)
 {
-    if (mgr == NULL || frame == NULL) {
+    if (frame == NULL || data == NULL) {
+        LOG_ERR("[can_tx_manager]Invalid frame or data pointer");
+        return -EINVAL;
+    }
+
+    /* 收集回调指针*/
+    rp_tx_fillbuffer_cb_t cbs[CONFIG_MAX_DEVICE_SENDERS];
+    int cb_count = 0;
+
+    k_mutex_lock(&data->lock, K_FOREVER);
+    for (int i = 0; i < CONFIG_MAX_DEVICE_SENDERS; i++) {
+        if (!data->device_list[i].used) {
+            continue;
+        }
+        if (data->device_list[i].tx_id != tx_id) {
+            continue;
+        }
+        if (data->device_list[i].fill_buffer_cb == NULL) {
+            continue;
+        }
+        cbs[cb_count] = data->device_list[i].fill_buffer_cb;
+        cb_count++;
+    }
+    k_mutex_unlock(&data->lock);
+
+    if (cb_count == 0) {
+        LOG_ERR("[can_tx_manager]No fill buffer callback for tx_id 0x%03x", tx_id);
+        return -EINVAL;
+    }
+    if(cb_count > 3)
+    {
+        LOG_ERR("[can_tx_manager]Too many fill buffer callbacks (%d) for tx_id 0x%03x", cb_count, tx_id);
+        return -EINVAL;
+    }
+
+    for (int j = 0; j < cb_count; j++) {
+        int ret = cbs[j](frame, user_datas);
+        if (ret != 0) {
+            LOG_ERR("[can_tx_manager]Fill buffer callback failed for tx_id 0x%03x, err %d", tx_id, ret);
+            return ret;
+        }
+    }
+
+    return 0;
+}
+
+/**
+ * @brief 通过can tx manager 发送 can 帧
+ * 
+ * @param mgr can总线管理器设备
+ * @param timeout 发送超时时间
+ * @param callback 发送完成回调函数
+ * @param tx_filter_id 发送过滤器ID，由注册设备时返回
+ * @param user_data 用户数据
+ * @return int 
+ */
+int rp_can_tx_manager_send(const struct device *mgr, k_timeout_t timeout, can_tx_callback_t callback, uint16_t tx_id, void *user_data)
+{
+    if (mgr == NULL) {
         return -EINVAL;
     }
 
     const rp_can_tx_cfg_t *cfg = (const rp_can_tx_cfg_t *)mgr->config;
-    if (cfg == NULL || cfg->can_dev == NULL) {
+    rp_can_tx_data_t *data = (rp_can_tx_data_t *)mgr->data;
+    if (cfg == NULL || cfg->can_dev == NULL || data == NULL || data->frame == NULL) {
+        LOG_ERR("[can_tx_manager]Invalid CAN TX manager configuration");
         return -ENODEV;
     }
+    if(data->frame_num == 0) {
+        LOG_ERR("[can_tx_manager]No CAN frames registered for transmission");
+        return -EINVAL;
+    }
+    int frame_index = -1;
+    for (int i = 0; i < data->frame_num; i++) {
+        if (tx_id == data->frame[i].id) {
+            frame_index = i;
+            break;
+        }
+    }
 
-    struct can_frame tx_frame = *frame;
-    tx_frame.id = tx_id;
+    if (frame_index < 0) {
+        LOG_ERR("[can_tx_manager]Frame for tx_id 0x%03x not found", tx_id);
+        return -ENOENT;
+    }
 
-    int ret = can_send(cfg->can_dev, &tx_frame, timeout, callback, user_data);
-    return ret;
+    int ret = rp_can_tx_fillbuffer(tx_id, &data->frame[frame_index], data, data->device_list[frame_index].device);
+    if (ret != 0) {
+        return ret;
+    }
+
+    return can_send(cfg->can_dev, &data->frame[frame_index], timeout, callback, data->device_list[frame_index].device);
 }
+
+#define RP_CAN_TX_MGR_DEFINE(inst)                                                              \
+    static const struct rp_can_tx_cfg rp_can_tx_mgr_cfg_##inst = {                      \
+        .can_dev = DEVICE_DT_GET(DT_INST_PHANDLE(inst, can_bus)),                               \
+    };                                                                                          \
+    static struct rp_can_tx_data rp_can_tx_mgr_data_##inst;                             \
+    DEVICE_DT_INST_DEFINE(inst, rp_can_tx_manager_init, NULL, &rp_can_tx_mgr_data_##inst,       \
+                          &rp_can_tx_mgr_cfg_##inst, POST_KERNEL, CONFIG_CAN_TX_MANAGER_INIT_PRIORITY, NULL);
+
+DT_INST_FOREACH_STATUS_OKAY(RP_CAN_TX_MGR_DEFINE)
+
+#endif /* CAN_TX_MANAGER */

@@ -17,6 +17,8 @@
 
 #include <drivers/can_rx_manager.h>
 
+#ifdef CONFIG_CAN_RX_MANAGER
+
 #define LOG_LEVEL 3
 LOG_MODULE_REGISTER(can_rx_manager);
 
@@ -270,3 +272,5 @@ static int rp_can_rx_manager_init(const struct device *dev)
 			  &rp_can_rx_mgr_cfg_##inst, POST_KERNEL, CONFIG_CAN_RX_MANAGER_INIT_PRIORITY, NULL);
 
 DT_INST_FOREACH_STATUS_OKAY(RP_CAN_RX_MGR_DEFINE)
+
+#endif /* CONFIG_CAN_RX_MANAGER */

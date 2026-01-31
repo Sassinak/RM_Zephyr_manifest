@@ -24,6 +24,7 @@ LOG_MODULE_REGISTER(motor_dji_can);
 #include <zephyr/drivers/can.h>
 
 #include <drivers/can_rx_manager.h>
+#include <drivers/can_tx_manager.h>
 
 /* Fallbacks for static analysis (Zephyr builds define these via autoconf.h) */
 #ifndef CONFIG_MOTOR_DJI_HEARTBEAT_OFFLINE_TIMEOUT_MS
@@ -54,7 +55,8 @@ typedef struct motor_dji_data_t
     sMotor_data_t motor_data;
     struct k_spinlock lock;                 // 保护 motor_data 的自旋锁，防止接收更新和心跳检测冲突
     bool registered;
-    int rx_filter_id;
+    int rx_filter_id;                       // CAN RX管理器 ID
+    int tx_filter_id;                       // CAN TX管理器 ID
 #if defined(CONFIG_MOTOR_DJI_HEARTBEAT_AUTOCHECK)
     const struct device *dev_self;          // 指向自身设备的指针，用于心跳自动检测
     struct k_work_delayable hb_work;        // 心跳自动检测的延时工作
@@ -155,6 +157,99 @@ static void motor_dji_can_rx_handler(const struct can_frame *frame, void *user_d
     k_spin_unlock(&motor->lock, key);                           // 解锁
 }
 
+
+/**
+ * @brief dji 电机的发送填充回调函数，但是要注意，发送的数据直接来源motor_data结构体中的Tx_data字段，
+ *        所以这里的回调函数主要是负责把 Tx_data 里的数据拷贝到 CAN frame 里。至于发送数据的顺序等逻辑，
+ *        由别的函数先序列化处理再放入 Tx_data。
+ * @param frame 
+ * @param user_data 
+ * @return int 
+ */
+static int motor_dji_can_tx_fillbuffer_handler(struct can_frame *frame, void *user_data)
+{
+    const struct device *motor = (const struct device *)user_data; // 还原 motor 指针
+    if ((motor == NULL) || (frame == NULL))
+    {
+        LOG_ERR("[dji_motor_err] tx handle Invalid arguments");
+        return -EINVAL;
+    }
+    motor_dji_data_t *data = (motor_dji_data_t *)motor->data;
+    const motor_dji_cfg_t *cfg = (const motor_dji_cfg_t *)motor->config;
+    if (data == NULL || cfg == NULL)
+    {
+        LOG_ERR("[dji_motor_err] tx handle data or cfg NULL");
+        return -EINVAL;
+    }
+    switch (cfg->control_mode)
+    {
+        case 0: // torque
+        case 1: // velocity
+        {
+            frame->dlc = 8;
+            frame->flags = 0;
+            k_spinlock_key_t key = k_spin_lock(&data->lock);
+            int diff = (int)cfg->rx_id - (int)cfg->tx_id;
+            if (diff <= 0) {
+                LOG_ERR("[dji_motor_err] tx handle invalid id difference: tx_id=%d, rx_id=%d", cfg->tx_id, cfg->rx_id);
+                k_spin_unlock(&data->lock, key);
+                return -EINVAL;
+            }
+            int off = (diff > 4) ? (diff - 4) : diff;
+            if (off <= 0 || off > 4) {
+                LOG_ERR("[dji_motor_err] tx handle computed off out of range: %d", off);
+                k_spin_unlock(&data->lock, key);
+                return -EINVAL;
+            }
+            int idx = 2 * (off - 1);
+            if ((idx + 2) > 8) {
+                LOG_ERR("[dji_motor_err] tx handle target index overflow: idx=%d", idx);
+                k_spin_unlock(&data->lock, key);
+                return -EFAULT;
+            }
+            memcpy(&frame->data[idx], &data->motor_data.Tx_data[0], 2);
+            k_spin_unlock(&data->lock, key);
+            return 0;
+        }
+        default:
+        {
+            LOG_ERR("[dji_motor_err] tx handle unknown control mode: %d", cfg->control_mode);
+            return -EINVAL;
+        }
+    }
+    return -EINVAL; // should not reach here
+    return 0;
+}
+
+/**
+ * @brief 暴露给上层的电机控制接口函数，负责将 current 值序列化到 Tx_data 里，电机发送报文的协议就在这里体现了。
+ * 
+ * @param dev 
+ * @param current 
+ * @return int 
+ */
+static int motor_dji_can_update_serialized(const struct device *dev, int16_t current)
+{
+    if(dev == NULL)
+    {
+        LOG_ERR("[dji_motor_err] update serialized Invalid arguments");
+        return -EINVAL;
+    }
+    motor_dji_data_t *data = dev->data;
+    const motor_dji_cfg_t *cfg = dev->config;
+    if (data == NULL || cfg == NULL)
+    {
+        LOG_ERR("[dji_motor_err] update serialized data or cfg NULL");
+        return -EINVAL;
+    }
+    k_spinlock_key_t key = k_spin_lock(&data->lock);
+    data->motor_data.Tx_data[0] = (uint8_t)((current >> 8) & 0xFF);
+    data->motor_data.Tx_data[1] = (uint8_t)(current & 0xFF);
+    k_spin_unlock(&data->lock, key);
+    return 0;
+}
+
+
 /**
  * @brief dji motor 心跳状态更新函数，供应用层/中间件调用以获取最新心跳状态.
  *        这个函数既可以在应用层创建线程调用，也可以启动自动检测（CONFIG_MOTOR_DJI_HEARTBEAT_AUTOCHECK）
@@ -247,16 +342,23 @@ static int motor_dji_can_register_motor(const struct device *dev)
         .mask = CAN_STD_ID_MASK,
         .flags = 0,
     };
-
-    int ret = rp_can_rx_manager_register(cfg->rx_mgr, &filter, motor_dji_can_rx_handler, data);
-    if (ret < 0) {
+    // 将电机接收交给 CAN RX 管理器处理
+    int rx_ret = rp_can_rx_manager_register(cfg->rx_mgr, &filter, motor_dji_can_rx_handler, data);
+    if (rx_ret < 0) {
         LOG_ERR("[dji_motor_err] Failed to register CAN RX filter");
-        return ret;
+        return rx_ret;
+    }
+    // 注册电机发送到 CAN TX 管理器
+    int tx_ret = rp_can_tx_manager_register(cfg->can_dev, cfg->tx_id, cfg->rx_id, motor_dji_can_tx_fillbuffer_handler, dev);
+    if (tx_ret < 0) {
+        LOG_ERR("[dji_motor_err] Failed to register CAN TX filter");
+        return tx_ret;
     }
 
     data->registered = true;
-    data->rx_filter_id = ret;
-    data->motor_data.Tx_data = 0;
+    data->rx_filter_id = rx_ret;        // can rx manager 索引ID
+    data->tx_filter_id = tx_ret;        // can tx manager 索引ID
+    data->motor_data.Tx_data[0] = 0;
     data->motor_data.interface_ptr = (void *)cfg;
     data->motor_data.Rx_data.valid_mask = 0U;
     data->motor_data.heartbeat_status.is_alive = false;
@@ -322,6 +424,7 @@ static int motor_dji_can_get_heartbeat_status(const struct device *dev)
 static const motor_driver_api_t motor_dji_can_api = {
     .register_motor = motor_dji_can_register_motor,
     .transfer = motor_dji_can_transfer,
+    .update_serialized = motor_dji_can_update_serialized,
     .get_heartbeat_status = motor_dji_can_get_heartbeat_status,
     .get_rxdata = motor_dji_can_get_rxdata,
 };

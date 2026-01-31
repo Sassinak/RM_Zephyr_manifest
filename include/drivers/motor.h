@@ -68,7 +68,7 @@ extern "C"
 
     typedef struct sMotor_data_t
     {
-        uint8_t *Tx_data;
+        uint8_t Tx_data[8];
         sMotor_Receive_Data_t Rx_data;
         sMotor_Heartbeat_Status_t heartbeat_status;
         void *interface_ptr;                            // 指向具体接口的指针
@@ -95,6 +95,8 @@ extern "C"
      */
     typedef int (*motor_api_transfer)(const struct device *dev);
 
+    typedef int (*motor_api_update_serialized)(const struct device *dev, int16_t current);
+
     /**
      * @typedef motor_api_get_heartbeat_status
      * @brief application/middleware get motor heartbeat status
@@ -109,6 +111,7 @@ extern "C"
         motor_api_transfer transfer;
         motor_api_get_rxdata get_rxdata;
         motor_api_get_heartbeat_status get_heartbeat_status;
+        motor_api_update_serialized update_serialized;
     } motor_driver_api_t;
 
     static inline int register_motor(const struct device *dev)

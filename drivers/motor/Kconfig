@@ -3,6 +3,7 @@ menuconfig MOTOR
     default n
     depends on CAN
     select CAN_RX_MANAGER
+    select CAN_TX_MANAGER
 
 if MOTOR
 
