@@ -14,7 +14,7 @@
 extern "C" {
 #endif
 
-typedef void (*rp_can_rx_handler_t)(const struct can_frame *frame, void *user_data);
+typedef void (*can_rx_handler_t)(const struct can_frame *frame, void *user_data);
 
 /**
  * @brief Register a software RX handler inside a CAN RX manager.
@@ -32,23 +32,61 @@ typedef void (*rp_can_rx_handler_t)(const struct can_frame *frame, void *user_da
  * @retval -ENODEV Manager not ready.
  * @retval -ENOSPC No free listener slots.
  */
-int rp_can_rx_manager_register(const struct device *mgr, const struct can_filter *filter,
-                              rp_can_rx_handler_t handler, void *user_data);
+typedef int (*can_rx_manager_api_register)(const struct device *mgr, const struct can_filter *filter,
+                                           can_rx_handler_t handler, void *user_data);
 
 /**
  * @brief Unregister a previously registered listener.
  *
  * @param mgr CAN RX manager device.
- * @param listener_id Listener ID returned by rp_can_rx_manager_register().
+ * @param listener_id Listener ID returned by can_rx_manager_api_register().
  *
  * @retval 0 on success.
  * @retval -EINVAL Invalid arguments.
  * @retval -ENOENT Listener not found.
  */
-int rp_can_rx_manager_unregister(const struct device *mgr, int listener_id);
+typedef int (*can_rx_manager_api_unregister)(const struct device *mgr, int listener_id);
 
 // TODO 实现 bitrate 计算功能
-float rp_can_rx_manager_calculate_bitrate(const struct device *mgr);
+typedef float (*can_rx_manager_api_calculate_bitrate)(const struct device *mgr);
+
+
+struct can_rx_manager_api
+{
+    can_rx_manager_api_register register_listener;
+    can_rx_manager_api_unregister unregister_listener;
+    can_rx_manager_api_calculate_bitrate calculate_bitrate;
+};
+
+
+static inline int can_rx_manager_register(const struct device *mgr, const struct can_filter *filter,
+                                        can_rx_handler_t handler, void *user_data)
+{
+    const struct can_rx_manager_api *api = (const struct can_rx_manager_api *)mgr->api;
+    if (api->register_listener == NULL) {
+        return -ENOSYS;
+    }
+    return api->register_listener(mgr, filter, handler, user_data);
+}
+
+static inline int can_rx_manager_unregister(const struct device *mgr, int listener_id)
+{
+    const struct can_rx_manager_api *api = (const struct can_rx_manager_api *)mgr->api;
+    if (api->unregister_listener == NULL) {
+        return -ENOSYS;
+    }
+    return api->unregister_listener(mgr, listener_id);
+}
+
+static inline float can_rx_manager_calculate_bitrate(const struct device *mgr)
+{
+    const struct can_rx_manager_api *api = (const struct can_rx_manager_api *)mgr->api;
+    if (api->calculate_bitrate == NULL) {
+        return -ENOSYS;
+    }
+    return api->calculate_bitrate(mgr);
+} 
+
 
 #ifdef __cplusplus
 }

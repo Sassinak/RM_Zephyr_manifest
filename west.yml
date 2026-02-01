@@ -12,7 +12,7 @@ manifest:
   projects:
     - name: Engineer
       description: this is a test project,just to validate my study
-      revision: main                                      # 必须有个revision字段，因为west默认查找的分支是master，而github新建的仓库默认分支是main
+      revision: develop                                      # 必须有个revision字段，因为west默认查找的分支是master，而github新建的仓库默认分支是main
       path: Engineer/RP_Engineer
     - name: zephyr
       remote: Zephyr-RTOS                                   # 项目内的remote必须是单数的

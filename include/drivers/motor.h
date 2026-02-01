@@ -141,6 +141,24 @@ extern "C"
         return api->get_rxdata(dev);
     }
 
+    static inline int motor_transfer(const struct device *dev)
+    {
+        const struct motor_driver_api_t *api = (const struct motor_driver_api_t *)dev->api;
+        if(!api || api->transfer == NULL) {
+            return -ENOSYS;
+        }
+        return api->transfer(dev);
+    }
+
+    static inline int motor_update_serialized(const struct device *dev, int16_t current)
+    {
+        const struct motor_driver_api_t *api = (const struct motor_driver_api_t *)dev->api;
+        if(!api || api->update_serialized == NULL) {
+            return -ENOSYS;
+        }
+        return api->update_serialized(dev, current);
+    }
+
 #ifdef __cplusplus
 }
 #endif

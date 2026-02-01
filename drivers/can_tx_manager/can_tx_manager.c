@@ -5,7 +5,6 @@
  */
 
  #define DT_DRV_COMPAT rp_can_tx_manager
-// TODO 实现 CAN TX manager 的功能
 
 #include <zephyr/kernel.h>
 #include <zephyr/device.h>
@@ -280,6 +279,9 @@ int rp_can_tx_manager_send(const struct device *mgr, k_timeout_t timeout, can_tx
 
     return can_send(cfg->can_dev, &data->frame[frame_index], timeout, callback, data->device_list[frame_index].device);
 }
+
+// TODO 实现自动can发送管理任务，定频发送等功能 --- IGNORE ---
+
 
 #define RP_CAN_TX_MGR_DEFINE(inst)                                                              \
     static const struct rp_can_tx_cfg rp_can_tx_mgr_cfg_##inst = {                      \

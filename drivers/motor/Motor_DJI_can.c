@@ -343,13 +343,13 @@ static int motor_dji_can_register_motor(const struct device *dev)
         .flags = 0,
     };
     // 将电机接收交给 CAN RX 管理器处理
-    int rx_ret = rp_can_rx_manager_register(cfg->rx_mgr, &filter, motor_dji_can_rx_handler, data);
+    int rx_ret = can_rx_manager_register(cfg->rx_mgr, &filter, motor_dji_can_rx_handler, data);
     if (rx_ret < 0) {
         LOG_ERR("[dji_motor_err] Failed to register CAN RX filter");
         return rx_ret;
     }
     // 注册电机发送到 CAN TX 管理器
-    int tx_ret = rp_can_tx_manager_register(cfg->can_dev, cfg->tx_id, cfg->rx_id, motor_dji_can_tx_fillbuffer_handler, dev);
+    int tx_ret = can_tx_manager_register(cfg->can_dev, cfg->tx_id, cfg->rx_id, motor_dji_can_tx_fillbuffer_handler, dev);
     if (tx_ret < 0) {
         LOG_ERR("[dji_motor_err] Failed to register CAN TX filter");
         return tx_ret;
@@ -423,7 +423,7 @@ static int motor_dji_can_get_heartbeat_status(const struct device *dev)
 
 static const motor_driver_api_t motor_dji_can_api = {
     .register_motor = motor_dji_can_register_motor,
-    .transfer = motor_dji_can_transfer,
+    .transfer = motor_dji_can_transfer,                             // TODO 暂未实现
     .update_serialized = motor_dji_can_update_serialized,
     .get_heartbeat_status = motor_dji_can_get_heartbeat_status,
     .get_rxdata = motor_dji_can_get_rxdata,
