@@ -35,6 +35,17 @@ struct rp_can_rx_manager_cfg {
 	size_t rx_stack_size;
 };
 
+struct rp_can_load_calculate
+{
+	/* cumulative bit counters for load calculation */
+	atomic_t rx_bits_nominal; /* bits counted at nominal (arbitration) rate */
+	atomic_t rx_bits_data;	  /* bits counted at data (BRS) rate for FD data phase */
+	uint64_t last_load_ts_ms; /* timestamp of last load snapshot */
+	uint64_t last_load_bits_nominal;
+	uint64_t last_load_bits_data;
+};
+
+
 struct rp_can_rx_manager_data {
 	struct rp_can_rx_listener listeners[CONFIG_CAN_RX_MANAGER_MAX_LISTENERS];
 	struct k_thread rx_thread;
@@ -44,17 +55,12 @@ struct rp_can_rx_manager_data {
 	atomic_t rx_queued;
 	uint32_t last_reported_drops;
 #endif
-	/* cumulative bit counters for load calculation */
-	atomic_t rx_bits_nominal; /* bits counted at nominal (arbitration) rate */
-	atomic_t rx_bits_data;    /* bits counted at data (BRS) rate for FD data phase */
-	uint64_t last_load_ts_ms; /* timestamp of last load snapshot */
-	uint64_t last_load_bits_nominal;
-	uint64_t last_load_bits_data;
+	struct rp_can_load_calculate load_calc;
+	double can_load;
 };
 
-/* Shared queue/thread for all CAN instances to save stacks/msgqs */
 struct rp_can_rx_msg {
-	const struct device *mgr; /* which manager / device this frame came from */
+	const struct device *mgr;
 	struct can_frame frame;
 };
 
@@ -131,19 +137,19 @@ static void rp_can_rx_isr_cb(const struct device *can_dev, struct can_frame *fra
 			}
 		}
 
-		(void)atomic_add(&mdata->rx_bits_nominal, (int)nominal_bits);
-		(void)atomic_add(&mdata->rx_bits_data, (int)data_bits);
+		(void)atomic_add(&mdata->load_calc.rx_bits_nominal, (int)nominal_bits);
+		(void)atomic_add(&mdata->load_calc.rx_bits_data, (int)data_bits);
 	}
 	ARG_UNUSED(ret);
 }
 
 /**
- * @brief 匹配 CAN 帧与过滤器，支持标准/扩展 ID
+ * @brief Match a CAN frame against a software filter (standard/extended ID supported)
  *
- * @param filter
- * @param frame
- * @return true
- * @return false
+ * @param filter Software filter to match against
+ * @param frame  Received CAN frame
+ * @return true  Frame matches the filter
+ * @return false Frame does not match
  */
 static bool rp_can_rx_match(const struct can_filter *filter, const struct can_frame *frame)
 {
@@ -171,6 +177,13 @@ static bool rp_can_rx_match(const struct can_filter *filter, const struct can_fr
 	}
 }
 
+/**
+ * @brief Shared RX processing thread for all CAN manager instances
+ *
+ * @param p1 Unused
+ * @param p2 Unused
+ * @param p3 Unused
+ */
 static void rp_can_rx_thread(void *p1, void *p2, void *p3)
 {
 	ARG_UNUSED(p1);
@@ -180,7 +193,7 @@ static void rp_can_rx_thread(void *p1, void *p2, void *p3)
 	struct rp_can_rx_msg msg;
 
 	while (true) {
-		int ret = k_msgq_get(&rp_can_rx_shared_msgq, &msg, K_FOREVER);
+		int ret = k_msgq_get(&rp_can_rx_shared_msgq, &msg, K_FOREVER);  /* Block until a CAN frame is available in the queue */
 		if (ret != 0) {
 			continue;
 		}
@@ -196,7 +209,7 @@ static void rp_can_rx_thread(void *p1, void *p2, void *p3)
 			}
 			if (data != NULL) {
 				struct can_frame *frame = &msg.frame;
-				for (int i = 0; i < CONFIG_CAN_RX_MANAGER_MAX_LISTENERS; i++) {
+				for (int i = 0; i < CONFIG_CAN_RX_MANAGER_MAX_LISTENERS; i++) {		/* Iterate all listener slots; invoke handler if filter matches */
 					struct rp_can_rx_listener *lst = &data->listeners[i];
 					if (!lst->used) {
 						continue;
@@ -238,6 +251,16 @@ static void rp_can_rx_thread(void *p1, void *p2, void *p3)
 	}
 }
 
+/**
+ * @brief Register a software RX listener. All CAN devices must register here before
+ *        receiving frames through the manager.
+ *
+ * @param mgr       CAN RX manager device
+ * @param filter    Software filter for frame matching
+ * @param handler   Callback invoked when a matching frame is received
+ * @param user_data Opaque pointer passed to the handler
+ * @return int      Listener ID on success, negative error code on failure
+ */
 int rp_can_rx_manager_register(const struct device *mgr, const struct can_filter *filter,
 			      can_rx_handler_t handler, void *user_data)
 {
@@ -268,6 +291,13 @@ int rp_can_rx_manager_register(const struct device *mgr, const struct can_filter
 	return -ENOSPC;
 }
 
+/**
+ * @brief Unregister a previously registered listener
+ *
+ * @param mgr         CAN RX manager device
+ * @param listener_id Listener ID returned by rp_can_rx_manager_register()
+ * @return int        0 on success, negative error code on failure
+ */
 int rp_can_rx_manager_unregister(const struct device *mgr, int listener_id)
 {
 	if ((mgr == NULL) || (listener_id < 0) || (listener_id >= CONFIG_CAN_RX_MANAGER_MAX_LISTENERS)) {
@@ -293,6 +323,13 @@ int rp_can_rx_manager_unregister(const struct device *mgr, int listener_id)
 	return 0;
 }
 
+
+/**
+ * @brief CAN RX manager driver initialization
+ *
+ * @param dev Device instance
+ * @return int 0 on success, negative error code on failure
+ */
 static int rp_can_rx_manager_init(const struct device *dev)
 {
 	const struct rp_can_rx_manager_cfg *cfg = dev->config;
@@ -334,7 +371,7 @@ static int rp_can_rx_manager_init(const struct device *dev)
 	atomic_set(&data->rx_queued, 0);
 	data->last_reported_drops = 0;
 #endif
-
+	/* The shared thread only needs to be started once across all instances; guard with atomic CAS */
 	if (atomic_cas(&rp_can_rx_shared_started, 0, 1)) {
 		k_thread_create(&rp_can_rx_shared_thread_data, rp_can_rx_shared_stack,
 				K_THREAD_STACK_SIZEOF(rp_can_rx_shared_stack), rp_can_rx_thread,
@@ -365,18 +402,18 @@ static float rp_can_rx_manager_calculate_load(const struct device *mgr, uint32_t
 	uint64_t now_ms = k_uptime_get();
 
 	/* Read 32-bit atomic counters (they may wrap); handle wrap-around below */
-	uint32_t cur_nom32 = (uint32_t)atomic_get(&data->rx_bits_nominal);
-	uint32_t cur_dat32 = (uint32_t)atomic_get(&data->rx_bits_data);
+	uint32_t cur_nom32 = (uint32_t)atomic_get(&data->load_calc.rx_bits_nominal);
+	uint32_t cur_dat32 = (uint32_t)atomic_get(&data->load_calc.rx_bits_data);
 
-	uint64_t last_nom = data->last_load_bits_nominal;
-	uint64_t last_dat = data->last_load_bits_data;
-	uint64_t last_ts = data->last_load_ts_ms;
+	uint64_t last_nom = data->load_calc.last_load_bits_nominal;
+	uint64_t last_dat = data->load_calc.last_load_bits_data;
+	uint64_t last_ts = data->load_calc.last_load_ts_ms;
 
 	/* On first call initialize snapshots */
 	if (last_ts == 0) {
-		data->last_load_bits_nominal = cur_nom32;
-		data->last_load_bits_data = cur_dat32;
-		data->last_load_ts_ms = now_ms;
+		data->load_calc.last_load_bits_nominal = cur_nom32;
+		data->load_calc.last_load_bits_data = cur_dat32;
+		data->load_calc.last_load_ts_ms = now_ms;
 		return 0.0f;
 	}
 
@@ -428,9 +465,9 @@ static float rp_can_rx_manager_calculate_load(const struct device *mgr, uint32_t
 	}
 
 	/* update snapshots (store low-32 snapshots so wrap handling works next call) */
-	data->last_load_bits_nominal = (uint64_t)cur_nom32;
-	data->last_load_bits_data = (uint64_t)cur_dat32;
-	data->last_load_ts_ms = now_ms;
+	data->load_calc.last_load_bits_nominal = (uint64_t)cur_nom32;
+	data->load_calc.last_load_bits_data = (uint64_t)cur_dat32;
+	data->load_calc.last_load_ts_ms = now_ms;
 
 	return (float)load;
 }
