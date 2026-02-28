@@ -115,7 +115,6 @@ static void motor_dji_can_rx_handler(const struct can_frame *frame, void *user_d
         case 1: // MOTOR_DJI_TYPE_M3508
         {
             motor->motor_data.Rx_data.angle = (uint16_t)((frame->data[0] << 8) | frame->data[1]);
-            /* speed and current are signed 16-bit two's-complement in M3508 protocol */
             motor->motor_data.Rx_data.speed = (int16_t)((frame->data[2] << 8) | frame->data[3]);
             motor->motor_data.Rx_data.current = (int16_t)((frame->data[4] << 8) | frame->data[5]);
             motor->motor_data.Rx_data.specific_data.m3508.temp = (int16_t)frame->data[6];

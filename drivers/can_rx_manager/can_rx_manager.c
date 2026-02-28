@@ -58,7 +58,9 @@ struct rp_can_rx_msg {
 	struct can_frame frame;
 };
 
-CAN_MSGQ_DEFINE(rp_can_rx_shared_msgq, CONFIG_CAN_RX_MANAGER_RX_MSGQ_LEN);
+/* Must use K_MSGQ_DEFINE with sizeof(rp_can_rx_msg), NOT CAN_MSGQ_DEFINE which
+ * only allocates sizeof(struct can_frame) per element and would cause overflow. */
+K_MSGQ_DEFINE(rp_can_rx_shared_msgq, sizeof(struct rp_can_rx_msg), CONFIG_CAN_RX_MANAGER_RX_MSGQ_LEN, 4);
 K_THREAD_STACK_DEFINE(rp_can_rx_shared_stack, CONFIG_CAN_RX_MANAGER_RX_STACK_SIZE);
 static struct k_thread rp_can_rx_shared_thread_data;
 static atomic_t rp_can_rx_shared_started = ATOMIC_INIT(0);
