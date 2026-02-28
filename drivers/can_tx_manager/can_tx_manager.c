@@ -12,15 +12,13 @@
 #include <zephyr/sys/util.h>
 #include <zephyr/logging/log.h>
 #include <zephyr/sys/atomic.h>
-
+#include <zephyr/drivers/can.h>
 #include <drivers/can_tx_manager.h>
 
 #include <string.h>
 
 #define LOG_LEVEL 3
 LOG_MODULE_REGISTER(can_tx_manager);
-
-#ifdef CONFIG_CAN_TX_MANAGER
 
 typedef struct rp_can_tx_cfg {
     const struct device *can_dev;
@@ -31,14 +29,14 @@ typedef struct device_sender_cfg {
     uint16_t rx_id;
     bool used;
     void *device;                               // 指向具体设备的指针
-    rp_tx_fillbuffer_cb_t fill_buffer_cb;       // 用于填充发送数据的回调函数
+    tx_fillbuffer_cb_t fill_buffer_cb;       // 用于填充发送数据的回调函数
 } device_sender_cfg_t;
 
 typedef struct rp_can_tx_data {
     device_sender_cfg_t device_list[CONFIG_MAX_DEVICE_SENDERS];
-    struct can_frame *frame;                    // 实际管理的can帧
-    struct k_mutex lock;                         // 保护 data 的互斥体
-    uint8_t frame_num;                          // 发送帧的数量
+    struct can_frame frame[CONFIG_MAX_CAN_FRAMES]; /* 实际管理的can帧，静态分配以避免 heap 依赖 */
+    struct k_mutex lock;                         /* 保护 data 的互斥体 */
+    uint8_t frame_num;                          /* 发送帧的数量 */
 } rp_can_tx_data_t;
 
 
@@ -59,12 +57,6 @@ int rp_can_tx_manager_init(const struct device *dev)
         data->device_list[i].rx_id = 0;
         data->device_list[i].fill_buffer_cb = NULL;
     }
-    data->frame = k_malloc(MAX_CAN_FRAMES * sizeof(struct can_frame));      // 分配最大数量的 CAN 帧
-    if (data->frame == NULL)
-    {
-        LOG_ERR("[can_tx_manager]Failed to allocate memory for CAN frames");
-        return -ENOMEM;
-    }
     data->frame_num = 0;
     k_mutex_init(&data->lock);                                         // 初始化互斥体
 
@@ -80,7 +72,7 @@ int rp_can_tx_manager_init(const struct device *dev)
  * @param fill_buffer_cb 用于填充发送数据的回调函数
  * @return int 返回注册的索引 ID，失败返回负值错误码
  */
-int rp_can_tx_manager_register(const struct device *mgr, uint16_t tx_id, uint16_t rx_id, rp_tx_fillbuffer_cb_t fill_buffer_cb, void *user_data)
+int rp_can_tx_manager_register(const struct device *mgr, uint16_t tx_id, uint16_t rx_id, tx_fillbuffer_cb_t fill_buffer_cb, void *user_data)
 {
     if (!device_is_ready(mgr))
     {
@@ -96,12 +88,6 @@ int rp_can_tx_manager_register(const struct device *mgr, uint16_t tx_id, uint16_
     }
     /* 保护并发访问：保持锁直到准备返回 */
     k_mutex_lock(&data->lock, K_FOREVER);
-
-    if (data->frame == NULL) {
-        LOG_ERR("[can_tx_manager]CAN frames not initialized");
-        k_mutex_unlock(&data->lock);
-        return -EFAULT;
-    }
 
     /* 检查是否已注册过相同的 tx_id */
     bool found = false;
@@ -120,6 +106,8 @@ int rp_can_tx_manager_register(const struct device *mgr, uint16_t tx_id, uint16_
         }
         memset(&data->frame[data->frame_num], 0, sizeof(struct can_frame));
         data->frame[data->frame_num].id = tx_id;
+        data->frame[data->frame_num].dlc = 8;
+        data->frame[data->frame_num].flags = 0;
         data->frame_num++;
     }
     for (int i = 0; i < CONFIG_MAX_DEVICE_SENDERS; i++) {
@@ -173,7 +161,7 @@ int rp_can_tx_manager_unregister(const struct device *mgr, const uint16_t tx_id,
             data->device_list[i].used = false;
             data->device_list[i].tx_id = 0;
             data->device_list[i].rx_id = 0;
-            data->device_list[i].user_data = NULL;
+            data->device_list[i].device = NULL;
             data->device_list[i].fill_buffer_cb = NULL;
             k_mutex_unlock(&data->lock);
             return 0; /* 成功注销 */
@@ -192,11 +180,8 @@ int rp_can_tx_fillbuffer(uint16_t tx_id, struct can_frame *frame, rp_can_tx_data
         return -EINVAL;
     }
 
-    /* 收集回调指针*/
-    rp_tx_fillbuffer_cb_t cbs[CONFIG_MAX_DEVICE_SENDERS];
+    /* 调用每个匹配注册项的回调，传入该注册项保存的 device 作为 user_data */
     int cb_count = 0;
-
-    k_mutex_lock(&data->lock, K_FOREVER);
     for (int i = 0; i < CONFIG_MAX_DEVICE_SENDERS; i++) {
         if (!data->device_list[i].used) {
             continue;
@@ -207,23 +192,29 @@ int rp_can_tx_fillbuffer(uint16_t tx_id, struct can_frame *frame, rp_can_tx_data
         if (data->device_list[i].fill_buffer_cb == NULL) {
             continue;
         }
-        cbs[cb_count] = data->device_list[i].fill_buffer_cb;
         cb_count++;
     }
-    k_mutex_unlock(&data->lock);
 
     if (cb_count == 0) {
         LOG_ERR("[can_tx_manager]No fill buffer callback for tx_id 0x%03x", tx_id);
         return -EINVAL;
     }
-    if(cb_count > 3)
-    {
-        LOG_ERR("[can_tx_manager]Too many fill buffer callbacks (%d) for tx_id 0x%03x", cb_count, tx_id);
-        return -EINVAL;
-    }
+    // if (cb_count > 3) {
+    //     LOG_ERR("[can_tx_manager]Too many fill buffer callbacks (%d) for tx_id 0x%03x", cb_count, tx_id);
+    //     return -EINVAL;
+    // }
 
-    for (int j = 0; j < cb_count; j++) {
-        int ret = cbs[j](frame, user_datas);
+    for (int i = 0; i < CONFIG_MAX_DEVICE_SENDERS; i++) {
+        if (!data->device_list[i].used) {
+            continue;
+        }
+        if (data->device_list[i].tx_id != tx_id) {
+            continue;
+        }
+        if (data->device_list[i].fill_buffer_cb == NULL) {
+            continue;
+        }
+        int ret = data->device_list[i].fill_buffer_cb(frame, data->device_list[i].device);
         if (ret != 0) {
             LOG_ERR("[can_tx_manager]Fill buffer callback failed for tx_id 0x%03x, err %d", tx_id, ret);
             return ret;
@@ -246,17 +237,22 @@ int rp_can_tx_fillbuffer(uint16_t tx_id, struct can_frame *frame, rp_can_tx_data
 int rp_can_tx_manager_send(const struct device *mgr, k_timeout_t timeout, can_tx_callback_t callback, uint16_t tx_id, void *user_data)
 {
     if (mgr == NULL) {
+        LOG_ERR("[can_tx_manager]CAN TX manager device is NULL");
         return -EINVAL;
     }
 
     const rp_can_tx_cfg_t *cfg = (const rp_can_tx_cfg_t *)mgr->config;
     rp_can_tx_data_t *data = (rp_can_tx_data_t *)mgr->data;
-    if (cfg == NULL || cfg->can_dev == NULL || data == NULL || data->frame == NULL) {
+    if (cfg == NULL || cfg->can_dev == NULL || data == NULL) {
         LOG_ERR("[can_tx_manager]Invalid CAN TX manager configuration");
         return -ENODEV;
     }
+
+    k_mutex_lock(&data->lock, K_FOREVER);
+
     if(data->frame_num == 0) {
         LOG_ERR("[can_tx_manager]No CAN frames registered for transmission");
+        k_mutex_unlock(&data->lock);
         return -EINVAL;
     }
     int frame_index = -1;
@@ -269,16 +265,26 @@ int rp_can_tx_manager_send(const struct device *mgr, k_timeout_t timeout, can_tx
 
     if (frame_index < 0) {
         LOG_ERR("[can_tx_manager]Frame for tx_id 0x%03x not found", tx_id);
+        k_mutex_unlock(&data->lock);
         return -ENOENT;
     }
 
-    int ret = rp_can_tx_fillbuffer(tx_id, &data->frame[frame_index], data, data->device_list[frame_index].device);
+    int ret = rp_can_tx_fillbuffer(tx_id, &data->frame[frame_index], data, user_data);
     if (ret != 0) {
+        k_mutex_unlock(&data->lock);
         return ret;
     }
 
-    return can_send(cfg->can_dev, &data->frame[frame_index], timeout, callback, data->device_list[frame_index].device);
+    k_mutex_unlock(&data->lock);
+    return can_send(cfg->can_dev, &data->frame[frame_index], timeout, callback, user_data);
 }
+
+
+static const struct can_tx_manager_api rp_can_tx_mgr_api = {
+    .register_sender = rp_can_tx_manager_register,
+    .unregister_sender =  rp_can_tx_manager_unregister,
+    .send_frame = rp_can_tx_manager_send,
+};
 
 // TODO 实现自动can发送管理任务，定频发送等功能 --- IGNORE ---
 
@@ -289,8 +295,7 @@ int rp_can_tx_manager_send(const struct device *mgr, k_timeout_t timeout, can_tx
     };                                                                                          \
     static struct rp_can_tx_data rp_can_tx_mgr_data_##inst;                             \
     DEVICE_DT_INST_DEFINE(inst, rp_can_tx_manager_init, NULL, &rp_can_tx_mgr_data_##inst,       \
-                          &rp_can_tx_mgr_cfg_##inst, POST_KERNEL, CONFIG_CAN_TX_MANAGER_INIT_PRIORITY, NULL);
+                          &rp_can_tx_mgr_cfg_##inst, POST_KERNEL, CONFIG_CAN_TX_MANAGER_INIT_PRIORITY, &rp_can_tx_mgr_api);
 
 DT_INST_FOREACH_STATUS_OKAY(RP_CAN_TX_MGR_DEFINE)
 
-#endif /* CAN_TX_MANAGER */

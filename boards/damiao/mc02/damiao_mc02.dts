@@ -114,7 +114,7 @@
 };
 
 &pwr {
-    power-supply = "external-source";
+    power-supply = "ldo";
     status = "okay";
 };
 

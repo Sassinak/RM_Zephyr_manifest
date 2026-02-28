@@ -7,6 +7,13 @@
         label = "can_rx_mgr1";
     };
 
+    can_tx_mgr1: can_tx_mgr1 {
+        compatible = "rp,can-tx-manager";
+        status = "okay";
+        can-bus = <&fdcan1>;
+        label = "can_tx_mgr1";
+    };
+
     chassis_FL:motor1{
         compatible = "rp,dji-can-motor";
         status = "okay";
@@ -17,7 +24,7 @@
         rx-id = <0x201>;
         motor-id = "chassis_FL";
         motor-type = "M3508";
-        label = "chassis_FL";
+        label = "chassis_fl";
         control-mode = "torque";
         motor-encoder = <8192>;
         motor-transmission-ratio = <19>;
@@ -33,7 +40,7 @@
         rx-id = <0x202>;
         motor-id = "chassis_FR";
         motor-type = "M3508";
-        label = "chassis_FR";
+        label = "chassis_fr";
         control-mode = "torque";
         motor-encoder = <8192>;
         motor-transmission-ratio = <19>;

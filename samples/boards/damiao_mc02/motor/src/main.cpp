@@ -6,6 +6,7 @@
 
 #include <drivers/motor.h>
 #include <drivers/can_tx_manager.h>
+#include <drivers/can_rx_manager.h>
 
 LOG_MODULE_REGISTER(app, LOG_LEVEL_INF);
 
@@ -38,9 +39,22 @@ typedef struct motor_dji_data_t
 int main(void)
 {
     LOG_INF("[app] start");
-    const struct device *motor_fl = DEVICE_DT_GET(DT_NODELABEL(chassis_fl));
-    const struct device *motor_fr = DEVICE_DT_GET(DT_NODELABEL(chassis_fr));
+    const struct device *motor_fl = device_get_binding("chassis_fl");
+    const struct device *motor_fr = device_get_binding("chassis_fr");
+    const struct device *can_tx_mgr = device_get_binding("can_tx_mgr1");
 
+    if (!motor_fl) {
+        LOG_ERR("motor FL not found");
+        return -ENODEV;
+    }
+    if (!motor_fr) {
+        LOG_ERR("motor FR not found");
+        return -ENODEV;
+    }
+    if (!can_tx_mgr) {
+        LOG_ERR("CAN TX manager not found");
+        return -ENODEV;
+    }
 
     if (!device_is_ready(motor_fl)) {
         LOG_ERR("motor FL not ready: %s", motor_fl->name);
@@ -48,6 +62,10 @@ int main(void)
     }
     if (!device_is_ready(motor_fr)) {
         LOG_ERR("motor FR not ready: %s", motor_fr->name);
+        return -ENODEV;
+    }
+    if (!device_is_ready(can_tx_mgr)) {
+        LOG_ERR("CAN TX manager not ready: %s", can_tx_mgr->name);
         return -ENODEV;
     }
 
@@ -63,7 +81,7 @@ int main(void)
         const motor_dji_cfg_t *cfg_fr = (const motor_dji_cfg_t *)motor_fr->config;
         const motor_dji_data_t *data_fl = (const motor_dji_data_t *)motor_fl->data;
         const motor_dji_data_t *data_fr = (const motor_dji_data_t *)motor_fr->data;
-        
+
         // 接收函数检查
         LOG_INF("FL angle=%d speed=%d current=%d alive=%d temp=%d",
                     (int)fl->angle, (int)fl->speed, (int)fl->current,
@@ -74,13 +92,13 @@ int main(void)
         // 发送函数检查
         motor_update_serialized(motor_fl, current);
         motor_update_serialized(motor_fr, current);
-        LOG_INF("real send tx_data: %d", (data_fl->motor_data.Tx_data[0]<<8 | data_fl->motor_data.Tx_data[1]));
-        can_tx_manager_send(cfg_fl->can_dev, K_MSEC(10), NULL,
-                            cfg_fl->tx_id, NULL);
-        
-
-        /* Yield so the log processing thread and RTT backend can flush. */
-        k_sleep(K_MSEC(500));
+        LOG_INF("real send tx_data fl: %d", (data_fl->motor_data.Tx_data[0]<<8 | data_fl->motor_data.Tx_data[1]));
+        LOG_INF("real send tx_data fr: %d", (data_fr->motor_data.Tx_data[0]<<8 | data_fr->motor_data.Tx_data[1]));
+        // can_tx_manager_send(can_tx_mgr, K_FOREVER, NULL,
+        //                     0x200, NULL);
+        // LOG_INF("CAN RX load: %.2f%%", (double)can_rx_manager_calculate_load(cfg_fl->rx_mgr, 1000000, 0));
+            /* Yield so the log processing thread and RTT backend can flush. */
+            k_sleep(K_MSEC(1));
     }
 
     return 0;

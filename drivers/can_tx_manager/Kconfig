@@ -8,7 +8,7 @@ menuconfig CAN_TX_MANAGER
       Enable per-CAN-bus TX manager which manages transmission of CAN frames from registered software handlers.
       them to registered software handlers.
 
-if CAN_RX_MANAGER
+if CAN_TX_MANAGER
 
 config CAN_TX_MANAGER_INIT_PRIORITY
         int "Init priority"

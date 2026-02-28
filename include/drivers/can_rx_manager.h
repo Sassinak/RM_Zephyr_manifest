@@ -47,15 +47,21 @@ typedef int (*can_rx_manager_api_register)(const struct device *mgr, const struc
  */
 typedef int (*can_rx_manager_api_unregister)(const struct device *mgr, int listener_id);
 
-// TODO 实现 bitrate 计算功能
-typedef float (*can_rx_manager_api_calculate_bitrate)(const struct device *mgr);
+/**
+ * @brief Calculate current CAN bus load (percentage) over the interval since last call.
+ * @param mgr CAN RX manager device
+ * @param nominal_bitrate_bps Bitrate used for arbitration/CRC/control (bps)
+ * @param data_bitrate_bps Bitrate used for FD data phase when BRS is set (bps). If 0, FD data is assumed to use nominal rate.
+ * @return load percentage in range [0.0 .. 100.0], negative on error.
+ */
+typedef float (*can_rx_manager_api_calculate_load)(const struct device *mgr, uint32_t nominal_bitrate_bps, uint32_t data_bitrate_bps);
 
 
 struct can_rx_manager_api
 {
     can_rx_manager_api_register register_listener;
     can_rx_manager_api_unregister unregister_listener;
-    can_rx_manager_api_calculate_bitrate calculate_bitrate;
+    can_rx_manager_api_calculate_load calculate_load;
 };
 
 
@@ -78,14 +84,22 @@ static inline int can_rx_manager_unregister(const struct device *mgr, int listen
     return api->unregister_listener(mgr, listener_id);
 }
 
-static inline float can_rx_manager_calculate_bitrate(const struct device *mgr)
+/**
+ * @brief 计算can回路的负载率
+ *
+ * @param mgr 管理器设备
+ * @param nominal_bitrate_bps 标称比特率 (bps)
+ * @param data_bitrate_bps 数据比特率 (bps)，如果为0，则假定FD数据使用标称速率
+ * @return  float 负载率百分比，错误时返回负值
+ */
+static inline float can_rx_manager_calculate_load(const struct device *mgr, uint32_t nominal_bitrate_bps, uint32_t data_bitrate_bps)
 {
     const struct can_rx_manager_api *api = (const struct can_rx_manager_api *)mgr->api;
-    if (api->calculate_bitrate == NULL) {
+    if (api->calculate_load == NULL) {
         return -ENOSYS;
     }
-    return api->calculate_bitrate(mgr);
-} 
+    return api->calculate_load(mgr, nominal_bitrate_bps, data_bitrate_bps);
+}
 
 
 #ifdef __cplusplus

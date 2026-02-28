@@ -48,6 +48,7 @@ typedef struct motor_dji_cfg_t {
     uint8_t transmission_ratio;
     const struct device *can_dev;
     const struct device *rx_mgr;
+    const struct device *tx_mgr;
 } motor_dji_cfg_t;
 
 typedef struct motor_dji_data_t
@@ -81,9 +82,9 @@ static void motor_dji_hb_work_handler(struct k_work *work)
 
 /**
  * @brief CAN 接收回调函数，在注册电机之后将会自动开始接收对应 ID 的 CAN 帧
- * 
- * @param frame 
- * @param user_data 
+ *
+ * @param frame
+ * @param user_data
  */
 static void motor_dji_can_rx_handler(const struct can_frame *frame, void *user_data)
 {
@@ -107,13 +108,14 @@ static void motor_dji_can_rx_handler(const struct can_frame *frame, void *user_d
         k_spin_unlock(&motor->lock, key);
         return;
     }
-        
+
     /* 解析 CAN 帧数据 */
     switch (cfg->motor_type)
     {
         case 1: // MOTOR_DJI_TYPE_M3508
         {
             motor->motor_data.Rx_data.angle = (uint16_t)((frame->data[0] << 8) | frame->data[1]);
+            /* speed and current are signed 16-bit two's-complement in M3508 protocol */
             motor->motor_data.Rx_data.speed = (int16_t)((frame->data[2] << 8) | frame->data[3]);
             motor->motor_data.Rx_data.current = (int16_t)((frame->data[4] << 8) | frame->data[5]);
             motor->motor_data.Rx_data.specific_data.m3508.temp = (int16_t)frame->data[6];
@@ -162,9 +164,9 @@ static void motor_dji_can_rx_handler(const struct can_frame *frame, void *user_d
  * @brief dji 电机的发送填充回调函数，但是要注意，发送的数据直接来源motor_data结构体中的Tx_data字段，
  *        所以这里的回调函数主要是负责把 Tx_data 里的数据拷贝到 CAN frame 里。至于发送数据的顺序等逻辑，
  *        由别的函数先序列化处理再放入 Tx_data。
- * @param frame 
- * @param user_data 
- * @return int 
+ * @param frame
+ * @param user_data
+ * @return int
  */
 static int motor_dji_can_tx_fillbuffer_handler(struct can_frame *frame, void *user_data)
 {
@@ -181,6 +183,7 @@ static int motor_dji_can_tx_fillbuffer_handler(struct can_frame *frame, void *us
         LOG_ERR("[dji_motor_err] tx handle data or cfg NULL");
         return -EINVAL;
     }
+    LOG_INF("motor tx fillbuffer handler called, control_mode=%d, tx_id=%03X", cfg->control_mode, cfg->tx_id);
     switch (cfg->control_mode)
     {
         case 0: // torque
@@ -190,7 +193,7 @@ static int motor_dji_can_tx_fillbuffer_handler(struct can_frame *frame, void *us
             frame->flags = 0;
             k_spinlock_key_t key = k_spin_lock(&data->lock);
             int diff = (int)cfg->rx_id - (int)cfg->tx_id;
-            if (diff <= 0) {
+            if (diff <= 0 || diff > 8) {
                 LOG_ERR("[dji_motor_err] tx handle invalid id difference: tx_id=%d, rx_id=%d", cfg->tx_id, cfg->rx_id);
                 k_spin_unlock(&data->lock, key);
                 return -EINVAL;
@@ -223,10 +226,10 @@ static int motor_dji_can_tx_fillbuffer_handler(struct can_frame *frame, void *us
 
 /**
  * @brief 暴露给上层的电机控制接口函数，负责将 current 值序列化到 Tx_data 里，电机发送报文的协议就在这里体现了。
- * 
- * @param dev 
- * @param current 
- * @return int 
+ *
+ * @param dev
+ * @param current
+ * @return int
  */
 static int motor_dji_can_update_serialized(const struct device *dev, int16_t current)
 {
@@ -309,9 +312,9 @@ int motor_dji_update_heartbeat_status(const struct device *dev)
 
 /**
  * @brief 单电机注册接口，通过 motor_id 识别电机实例，配置了can的接收过滤器
- * 
- * @param dev 
- * @return int 
+ *
+ * @param dev
+ * @return int
  */
 static int motor_dji_can_register_motor(const struct device *dev)
 {
@@ -343,16 +346,21 @@ static int motor_dji_can_register_motor(const struct device *dev)
         .flags = 0,
     };
     // 将电机接收交给 CAN RX 管理器处理
-    int rx_ret = can_rx_manager_register(cfg->rx_mgr, &filter, motor_dji_can_rx_handler, data);
+    int rx_ret = can_rx_manager_register(cfg->rx_mgr, &filter, motor_dji_can_rx_handler, (void *)data);
     if (rx_ret < 0) {
         LOG_ERR("[dji_motor_err] Failed to register CAN RX filter");
         return rx_ret;
     }
-    // 注册电机发送到 CAN TX 管理器
-    int tx_ret = can_tx_manager_register(cfg->can_dev, cfg->tx_id, cfg->rx_id, motor_dji_can_tx_fillbuffer_handler, dev);
+    else LOG_INF("Motor (%s) registered CAN RX ID: 0x%03X  licenseID: %d", cfg->motor_id, cfg->rx_id, rx_ret);
+    // 注册电机发送到 CAN TX 管理器（传入 tx_mgr）并检查返回值
+    int tx_ret = can_tx_manager_register(cfg->tx_mgr, cfg->tx_id, cfg->rx_id,
+                                        motor_dji_can_tx_fillbuffer_handler, (void *)dev);
     if (tx_ret < 0) {
-        LOG_ERR("[dji_motor_err] Failed to register CAN TX filter");
+        LOG_ERR("[dji_motor_err] Failed to register CAN TX filter: %d", tx_ret);
+        /* 撤销先前已注册的 RX 过滤器（如果需要）： can_rx_manager_unregister(cfg->rx_mgr, rx_ret); */
         return tx_ret;
+    } else {
+        LOG_INF("Motor (%s) registered CAN TX ID: 0x%03X  licenseID: %d", cfg->motor_id, cfg->tx_id, tx_ret);
     }
 
     data->registered = true;
@@ -372,9 +380,9 @@ static int motor_dji_can_register_motor(const struct device *dev)
  *        这里直接返回了 Rx_data 的指针，上层不可更改
  *        此外因为大部分mcu都是单核的，主线程和中断不会并发执行，所以是安全的
  *        如果在多核平台上使用，请自行加锁保护！！！！！或者改成双缓冲及快照
- * 
- * @param dev 
- * @return const sMotor_Receive_Data_t* 
+ *
+ * @param dev
+ * @return const sMotor_Receive_Data_t*
  */
 static const sMotor_Receive_Data_t *motor_dji_can_get_rxdata(const struct device *dev)
 {
@@ -396,8 +404,8 @@ static int motor_dji_can_transfer(const struct device *dev)
 
 /**
  * @brief 获取电机心跳状态接口，供应用层/中间件调用
- * 
- * @param dev 
+ *
+ * @param dev
  * @return int 1: alive, 0: not alive, <0: error code
  */
 static int motor_dji_can_get_heartbeat_status(const struct device *dev)
@@ -429,6 +437,40 @@ static const motor_driver_api_t motor_dji_can_api = {
     .get_rxdata = motor_dji_can_get_rxdata,
 };
 
+/* Single init function used for all instances */
+static int motor_dji_can_init(const struct device *dev)
+{
+    const motor_dji_cfg_t *cfg = dev->config;
+    motor_dji_data_t *data = dev->data;
+
+    if (!device_is_ready(cfg->can_dev)) {
+        return -ENODEV;
+    }
+    if ((cfg->rx_mgr == NULL) || !device_is_ready(cfg->rx_mgr)) {
+        if ((cfg->tx_mgr == NULL) || !device_is_ready(cfg->tx_mgr)) {
+            return -ENODEV;
+        }
+        return -ENODEV;
+    }
+
+    data->registered = false;
+    data->rx_filter_id = -1;
+    data->tx_filter_id = -1;
+    memset(&data->motor_data, 0, sizeof(data->motor_data));
+    data->motor_data.interface_ptr = (void *)cfg;
+    data->motor_data.Rx_data.valid_mask = 0U;
+    data->motor_data.heartbeat_status.is_alive = false;
+    data->motor_data.heartbeat_status.heartbeat_tick = 0;
+
+#if defined(CONFIG_MOTOR_DJI_HEARTBEAT_AUTOCHECK)
+    data->dev_self = dev;
+    k_work_init_delayable(&data->hb_work, motor_dji_hb_work_handler);
+    (void)k_work_schedule(&data->hb_work, K_MSEC(CONFIG_MOTOR_DJI_HEARTBEAT_POLL_PERIOD_MS));
+#endif
+
+    return 0;
+}
+
 
 /* ---------- Devicetree helpers ---------- */
 
@@ -451,34 +493,12 @@ static const motor_driver_api_t motor_dji_can_api = {
         .can_dev = DEVICE_DT_GET(DT_INST_PHANDLE(inst, can_bus)), \
         .rx_mgr = COND_CODE_1(DT_INST_NODE_HAS_PROP(inst, rx_manager), \
                       (DEVICE_DT_GET(DT_INST_PHANDLE(inst, rx_manager))), (NULL)), \
+        .tx_mgr = COND_CODE_1(DT_INST_NODE_HAS_PROP(inst, tx_manager), \
+                      (DEVICE_DT_GET(DT_INST_PHANDLE(inst, tx_manager))), (NULL)), \
     }; \
     static motor_dji_data_t motor_dji_data_##inst; \
-    static int motor_dji_can_init_##inst(const struct device *dev) \
-    { \
-        const motor_dji_cfg_t *cfg = dev->config; \
-        motor_dji_data_t *data = dev->data; \
-        if (!device_is_ready(cfg->can_dev)) { \
-            return -ENODEV; \
-        } \
-        if ((cfg->rx_mgr == NULL) || !device_is_ready(cfg->rx_mgr)) { \
-            return -ENODEV; \
-        } \
-        data->registered = false; \
-        data->rx_filter_id = -1; \
-        memset(&data->motor_data, 0, sizeof(data->motor_data)); \
-        data->motor_data.interface_ptr = (void *)cfg; \
-        data->motor_data.Rx_data.valid_mask = 0U; \
-        data->motor_data.heartbeat_status.is_alive = false; \
-        data->motor_data.heartbeat_status.heartbeat_tick = 0; \
-        IF_ENABLED(CONFIG_MOTOR_DJI_HEARTBEAT_AUTOCHECK, ( \
-            data->dev_self = dev; \
-            k_work_init_delayable(&data->hb_work, motor_dji_hb_work_handler); \
-            (void)k_work_schedule(&data->hb_work, K_MSEC(CONFIG_MOTOR_DJI_HEARTBEAT_POLL_PERIOD_MS)); \
-        )) \
-        return 0; \
-    } \
-    DEVICE_DT_INST_DEFINE(inst, motor_dji_can_init_##inst, NULL, &motor_dji_data_##inst, \
-                  &motor_dji_cfg_##inst, POST_KERNEL, CONFIG_MOTOR_INIT_PRIORITY, \
+    DEVICE_DT_INST_DEFINE(inst, motor_dji_can_init, NULL, &motor_dji_data_##inst, \
+                      &motor_dji_cfg_##inst, POST_KERNEL, CONFIG_MOTOR_INIT_PRIORITY, \
                   &motor_dji_can_api);
 
 #if DT_HAS_COMPAT_STATUS_OKAY(DT_DRV_COMPAT)

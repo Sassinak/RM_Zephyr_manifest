@@ -33,7 +33,7 @@ config MOTOR_DJI_HEARTBEAT_POLL_PERIOD_MS
 
 config MOTOR_INIT_PRIORITY
         int "Init priority"
-        default 91
+        default 93
         range 0 99
         help
             Device init priority for motor drivers.
