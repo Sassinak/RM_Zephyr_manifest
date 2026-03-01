@@ -18,19 +18,12 @@ typedef void (*can_rx_handler_t)(const struct can_frame *frame, void *user_data)
 
 /**
  * @brief Register a software RX handler inside a CAN RX manager.
- *
- * The manager owns the hardware RX filter(s) and a message queue. It receives CAN frames
- * and dispatches them to registered handlers by matching @p filter.
- *
  * @param mgr      CAN RX manager device.
  * @param filter   CAN filter used for software matching (standard/extended is controlled by flags).
  * @param handler  Called in manager RX thread context.
  * @param user_data Opaque pointer passed to handler.
  *
  * @retval >=0 Listener ID (can be used for unregister).
- * @retval -EINVAL Invalid arguments.
- * @retval -ENODEV Manager not ready.
- * @retval -ENOSPC No free listener slots.
  */
 typedef int (*can_rx_manager_api_register)(const struct device *mgr, const struct can_filter *filter,
                                            can_rx_handler_t handler, void *user_data);
@@ -40,10 +33,7 @@ typedef int (*can_rx_manager_api_register)(const struct device *mgr, const struc
  *
  * @param mgr CAN RX manager device.
  * @param listener_id Listener ID returned by can_rx_manager_api_register().
- *
  * @retval 0 on success.
- * @retval -EINVAL Invalid arguments.
- * @retval -ENOENT Listener not found.
  */
 typedef int (*can_rx_manager_api_unregister)(const struct device *mgr, int listener_id);
 
@@ -64,7 +54,14 @@ struct can_rx_manager_api
     can_rx_manager_api_calculate_load calculate_load;
 };
 
-
+/**
+ * @brief Register a software RX handler inside a CAN RX manager.
+ * @param mgr      CAN RX manager device.
+ * @param filter   CAN filter used for software matching (standard/extended is controlled by flags).
+ * @param handler  Called in manager RX thread context.
+ * @param user_data Opaque pointer passed to handler (should be the CAN device data pointer).
+ * @return int
+ */
 static inline int can_rx_manager_register(const struct device *mgr, const struct can_filter *filter,
                                         can_rx_handler_t handler, void *user_data)
 {
@@ -75,6 +72,13 @@ static inline int can_rx_manager_register(const struct device *mgr, const struct
     return api->register_listener(mgr, filter, handler, user_data);
 }
 
+/**
+ * @brief Unregister a previously registered listener.
+ *
+ * @param mgr CAN RX manager device.
+ * @param listener_id Listener ID returned by can_rx_manager_register().
+ * @return int 0 on success, negative error code on failure.
+ */
 static inline int can_rx_manager_unregister(const struct device *mgr, int listener_id)
 {
     const struct can_rx_manager_api *api = (const struct can_rx_manager_api *)mgr->api;
@@ -85,12 +89,12 @@ static inline int can_rx_manager_unregister(const struct device *mgr, int listen
 }
 
 /**
- * @brief 计算can回路的负载率
+ * @brief Calculate the CAN bus load percentage over the interval since the last call.
  *
- * @param mgr 管理器设备
- * @param nominal_bitrate_bps 标称比特率 (bps)
- * @param data_bitrate_bps 数据比特率 (bps)，如果为0，则假定FD数据使用标称速率
- * @return  float 负载率百分比，错误时返回负值
+ * @param mgr                CAN RX manager device
+ * @param nominal_bitrate_bps Nominal (arbitration) bitrate in bps
+ * @param data_bitrate_bps   FD data-phase bitrate in bps; 0 means use nominal rate (classic CAN)
+ * @return float             Load percentage [0.0 .. 100.0], negative value on error
  */
 static inline float can_rx_manager_calculate_load(const struct device *mgr, uint32_t nominal_bitrate_bps, uint32_t data_bitrate_bps)
 {

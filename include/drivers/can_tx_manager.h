@@ -20,7 +20,7 @@ typedef int (*tx_fillbuffer_cb_t)(struct can_frame *frame, void *user_data);
 /**
   * @brief Register a software TX handler inside a CAN TX manager.
  */
-typedef int (*can_tx_manager_api_register)(const struct device *mgr, uint16_t tx_id, uint16_t rx_id, tx_fillbuffer_cb_t fill_buffer_cb, void *user_data);
+typedef int (*can_tx_manager_api_register)(const struct device *mgr, uint16_t tx_id, uint16_t rx_id, uint8_t dlc, uint8_t flags, tx_fillbuffer_cb_t fill_buffer_cb, void *user_data);
 
 typedef int (*can_tx_manager_api_unregister)(const struct device *mgr, const uint16_t tx_id, const uint16_t rx_id);
 
@@ -28,18 +28,18 @@ typedef int (*can_tx_manager_api_send)(const struct device *mgr, k_timeout_t tim
 
 struct can_tx_manager_api
 {
-    can_tx_manager_api_register register_sender;  
+    can_tx_manager_api_register register_sender;
     can_tx_manager_api_unregister unregister_sender;
     can_tx_manager_api_send send_frame;
 };
 
-static inline int can_tx_manager_register(const struct device *mgr, uint16_t tx_id, uint16_t rx_id, tx_fillbuffer_cb_t fill_buffer_cb, void *user_data)
+static inline int can_tx_manager_register(const struct device *mgr, uint16_t tx_id, uint16_t rx_id, uint8_t dlc, uint8_t flags, tx_fillbuffer_cb_t fill_buffer_cb, void *user_data)
 {
     const struct can_tx_manager_api *api = (const struct can_tx_manager_api *)mgr->api;
     if(api->register_sender == NULL) {
         return -ENOSYS;
     }
-    return api->register_sender(mgr, tx_id, rx_id, fill_buffer_cb, user_data);
+    return api->register_sender(mgr, tx_id, rx_id, dlc, flags, fill_buffer_cb, user_data);
 }
 
 static inline int can_tx_manager_unregister(const struct device *mgr, const uint16_t tx_id, const uint16_t rx_id)

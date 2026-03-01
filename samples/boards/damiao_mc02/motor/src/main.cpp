@@ -90,12 +90,12 @@ int main(void)
                 (int)fr->angle, (int)fr->speed, (int)fr->current,
                 get_motor_heartbeat_status(motor_fr) ? 1 : 0, (int)fr->specific_data.m3508.temp);
         // 发送函数检查
-        // motor_update_serialized(motor_fl, current);
-        // motor_update_serialized(motor_fr, current);
-        // LOG_INF("real send tx_data fl: %d", (data_fl->motor_data.Tx_data[0]<<8 | data_fl->motor_data.Tx_data[1]));
-        // LOG_INF("real send tx_data fr: %d", (data_fr->motor_data.Tx_data[0]<<8 | data_fr->motor_data.Tx_data[1]));
-        // can_tx_manager_send(can_tx_mgr, K_FOREVER, NULL,
-        //                     0x200, NULL);
+        motor_update_serialized(motor_fl, current);
+        motor_update_serialized(motor_fr, current);
+        LOG_INF("real send tx_data fl: %d", (data_fl->motor_data.Tx_data[0]<<8 | data_fl->motor_data.Tx_data[1]));
+        LOG_INF("real send tx_data fr: %d", (data_fr->motor_data.Tx_data[0]<<8 | data_fr->motor_data.Tx_data[1]));
+        can_tx_manager_send(can_tx_mgr, K_FOREVER, NULL,
+                            0x200, NULL);
         // LOG_INF("CAN RX load: %.2f%%", (double)can_rx_manager_calculate_load(cfg_fl->rx_mgr, 1000000, 0));
             /* Yield so the log processing thread and RTT backend can flush. */
             k_sleep(K_MSEC(100));
