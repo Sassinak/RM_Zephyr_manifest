@@ -22,7 +22,7 @@ properties:
       Reference to a shared CAN RX manager (rp,can-rx-manager) bound to the same can-bus.
       When present, motor drivers should receive frames through the manager instead of
       creating their own RX threads/message queues.
-  
+
   tx-manager:
     type: phandle
     required: true
@@ -56,12 +56,6 @@ properties:
     description: |
       CAN identifier expected in frames received from the motor.
 
-  motor-id:
-    type: string
-    required: true
-    description: |
-      Unique identifier string for application use (e.g. "chassis_FL").
-
   motor-type:             # 设计这个字段是因为不同类型的电机，接收的数据格式不一样
     type: string
     required: true
@@ -71,7 +65,7 @@ properties:
       - "M2006"
       - "M6020"
     description: |
-      Type of DJI motor.    
+      Type of DJI motor.
 
   motor-encoder:
     type: int
@@ -83,7 +77,13 @@ properties:
     type: int
     required: true
     description: |
-      Gearbox transmission ratio (output shaft speed / motor speed).ex: 1:19 -> 19 
+      Gearbox transmission ratio (output shaft speed / motor speed).ex: 1:19 -> 19
+
+  Tx-feq:
+    type: int
+    required: true
+    description: |
+      Frequency (in Hz) at which to send commands to the motor. 0 means manaual send only.
 
   control-mode:
     type: string

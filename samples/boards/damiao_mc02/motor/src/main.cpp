@@ -41,7 +41,6 @@ int main(void)
     LOG_INF("[app] start");
     const struct device *motor_fl = device_get_binding("chassis_fl");
     const struct device *motor_fr = device_get_binding("chassis_fr");
-    const struct device *can_tx_mgr = device_get_binding("can_tx_mgr1");
 
     if (!motor_fl) {
         LOG_ERR("motor FL not found");
@@ -49,10 +48,6 @@ int main(void)
     }
     if (!motor_fr) {
         LOG_ERR("motor FR not found");
-        return -ENODEV;
-    }
-    if (!can_tx_mgr) {
-        LOG_ERR("CAN TX manager not found");
         return -ENODEV;
     }
 
@@ -64,12 +59,9 @@ int main(void)
         LOG_ERR("motor FR not ready: %s", motor_fr->name);
         return -ENODEV;
     }
-    if (!device_is_ready(can_tx_mgr)) {
-        LOG_ERR("CAN TX manager not ready: %s", can_tx_mgr->name);
-        return -ENODEV;
-    }
 
-    int current = 1000;
+    int current = 100;
+    static int step = 20;
 
     register_motor(motor_fl);
     register_motor(motor_fr);
@@ -89,16 +81,30 @@ int main(void)
         LOG_INF("FR angle=%d speed=%d current=%d alive=%d temp=%d",
                 (int)fr->angle, (int)fr->speed, (int)fr->current,
                 get_motor_heartbeat_status(motor_fr) ? 1 : 0, (int)fr->specific_data.m3508.temp);
+
         // 发送函数检查
         motor_update_serialized(motor_fl, current);
         motor_update_serialized(motor_fr, current);
+
+        current += step;
+        if (current >= 1000)
+        {
+            current = 1000;
+            step = -20;
+        }
+        else if (current <= -1000)
+        {
+            current = 100;
+            step = 20;
+        }
+
         LOG_INF("real send tx_data fl: %d", (data_fl->motor_data.Tx_data[0]<<8 | data_fl->motor_data.Tx_data[1]));
         LOG_INF("real send tx_data fr: %d", (data_fr->motor_data.Tx_data[0]<<8 | data_fr->motor_data.Tx_data[1]));
-        can_tx_manager_send(can_tx_mgr, K_FOREVER, NULL,
-                            0x200, NULL);
+        // can_tx_manager_send(can_tx_mgr, K_FOREVER, NULL,
+        //                     0x200, NULL);
         // LOG_INF("CAN RX load: %.2f%%", (double)can_rx_manager_calculate_load(cfg_fl->rx_mgr, 1000000, 0));
             /* Yield so the log processing thread and RTT backend can flush. */
-            k_sleep(K_MSEC(100));
+        k_sleep(K_MSEC(100));
     }
 
     return 0;

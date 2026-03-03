@@ -2,8 +2,6 @@ cmake_minimum_required(VERSION 3.20)
 
 set(BOARD damiao_mc02)
 find_package(Zephyr REQUIRED HINTS $ENV{ZEPHYR_BASE})
-project(ws2812)
+project(motor_sample)
 
 target_sources(app PRIVATE src/main.cpp)
-# Include local can_tx_manager driver implementation from manifest drivers
-zephyr_library_sources(../../../../drivers/can_tx_manager/can_tx_manager.c)

@@ -22,10 +22,10 @@
         tx-manager = <&can_tx_mgr1>;
         tx-id = <0x200>;
         rx-id = <0x201>;
-        motor-id = "chassis_FL";
         motor-type = "M3508";
         label = "chassis_fl";
         control-mode = "torque";
+        Tx-feq = <1000>;
         motor-encoder = <8192>;
         motor-transmission-ratio = <19>;
     };
@@ -38,10 +38,10 @@
         tx-manager = <&can_tx_mgr1>;
         tx-id = <0x200>;
         rx-id = <0x202>;
-        motor-id = "chassis_FR";
         motor-type = "M3508";
         label = "chassis_fr";
         control-mode = "torque";
+        Tx-feq = <1000>;
         motor-encoder = <8192>;
         motor-transmission-ratio = <19>;
     };

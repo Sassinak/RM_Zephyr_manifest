@@ -2,8 +2,8 @@ menuconfig MOTOR
     bool "Motor drivers"
     default n
     depends on CAN
-    select CAN_RX_MANAGER
-    select CAN_TX_MANAGER
+    # select CAN_RX_MANAGER
+    # select CAN_TX_MANAGER
 
 if MOTOR
 

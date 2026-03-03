@@ -18,8 +18,9 @@ extern "C"
     /* M2006特有的数据结构，暂时是空*/
     // typedef struct sMotor_M2006_RxData_t
     // {
-        
+
     // } sMotor_M2006_RxData_t;
+
     /* M3508特有的数据结构*/
     typedef struct sMotor_M3508_RxData_t
     {
@@ -55,11 +56,11 @@ extern "C"
 
     /**
      * @brief 掩码判断接收数据字段是否有效
-     * 
-     * @param rx 
-     * @param mask 
-     * @return true 
-     * @return false 
+     *
+     * @param rx
+     * @param mask
+     * @return true
+     * @return false
      */
     static inline bool motor_rx_has(const sMotor_Receive_Data_t *rx, uint32_t mask)
     {
@@ -77,7 +78,7 @@ extern "C"
     /**
      * @typedef motor_api_register
      * @brief Callback API for register a motor device.
-     * 
+     *
      */
     typedef int (*motor_api_register)(const struct device *dev);
 
@@ -85,31 +86,27 @@ extern "C"
     /**
      * @typedef motor_api_get_rxdata
      * @brief get motor receive data pointer
-     * 
+     *
      */
     typedef const sMotor_Receive_Data_t *(*motor_api_get_rxdata)(const struct device *dev);
-
-    /**
-     * @typedef motor_api_transfer
-     * @brief transifer data by unique interface
-     */
-    typedef int (*motor_api_transfer)(const struct device *dev);
 
     typedef int (*motor_api_update_serialized)(const struct device *dev, int16_t current);
 
     /**
      * @typedef motor_api_get_heartbeat_status
      * @brief application/middleware get motor heartbeat status
-     * 
+     *
      */
     typedef int (*motor_api_get_heartbeat_status)(const struct device *dev);
+
+    typedef int (*motor_api_change_Tx_feq)(const struct device *dev, uint16_t new_feq);
 
 
     typedef struct motor_driver_api_t
     {
         motor_api_register register_motor;
-        motor_api_transfer transfer;
         motor_api_get_rxdata get_rxdata;
+        motor_api_change_Tx_feq change_Tx_feq;
         motor_api_get_heartbeat_status get_heartbeat_status;
         motor_api_update_serialized update_serialized;
     } motor_driver_api_t;
@@ -139,15 +136,6 @@ extern "C"
             return NULL;
         }
         return api->get_rxdata(dev);
-    }
-
-    static inline int motor_transfer(const struct device *dev)
-    {
-        const struct motor_driver_api_t *api = (const struct motor_driver_api_t *)dev->api;
-        if(!api || api->transfer == NULL) {
-            return -ENOSYS;
-        }
-        return api->transfer(dev);
     }
 
     static inline int motor_update_serialized(const struct device *dev, int16_t current)
