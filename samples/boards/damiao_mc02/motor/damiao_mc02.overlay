@@ -46,6 +46,4 @@
         motor-transmission-ratio = <19>;
     };
 
-
-
 };

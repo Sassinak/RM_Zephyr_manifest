@@ -17,7 +17,7 @@
 #include <zephyr/dt-bindings/led/led.h>                     // 定义LED的颜色
 #include <zephyr/dt-bindings/dma/stm32_dma.h>
 #include <zephyr/dt-bindings/spi/spi.h>
-#include <zephyr/dt-bindings/pwm/pwm.h>       
+#include <zephyr/dt-bindings/pwm/pwm.h>
 
 
 // 根节点中只需要描述板子特有的硬件功能，在喵板中只有一个用户按键
@@ -26,7 +26,7 @@
     compatible = "damiao,mc02", "st,stm32h723";
 
     chosen {
-        zephyr,dtcm  = &dtcm;                
+        zephyr,dtcm  = &dtcm;
         zephyr,sram  = &sram0;
         zephyr,itcm  = &itcm;
         zephyr,flash = &flash0;
@@ -44,9 +44,9 @@
     buzzer: buzzer0 {
         status = "okay";
         compatible = "rp,pwm-buzzer";
-        pwms = <&pwmBuzzer 2 PWM_MSEC(1) PWM_POLARITY_NORMAL>; 
-        default-frequency = <2000>;   
-        default-volume = <50>;                                         
+        pwms = <&pwmBuzzer 2 PWM_MSEC(1) PWM_POLARITY_NORMAL>;
+        default-frequency = <2000>;
+        default-volume = <50>;
     };
 
     aliases {
@@ -129,12 +129,12 @@
 
 &dma1 {
     status = "okay";
-    dma-channels = <8>;             
+    dma-channels = <8>;
 };
 
 &dma2 {
     status = "okay";
-    dma-channels = <8>;             
+    dma-channels = <8>;
 };
 
 /*
@@ -144,7 +144,7 @@
  * search stm32h7xx_hal_dma.h find the defination of slot(DMA_REQUEST) & other configuration ！！！
  */
 &dmamux1 {
-    status = "okay";          
+    status = "okay";
 };
 
 /* 芯片温度传感器 */
@@ -220,8 +220,8 @@
         gyro-hz = "1000_116";
         gyro-fs = <1000>;
         data-sync;
-    };        
-    
+    };
+
 };
 
 &spi6 {
@@ -249,7 +249,7 @@
 };
 
 /*---------------------spi config end----------------------------*/
- 
+
 
 /*---------------------usart config start------------------------*/
 &usart1 {
@@ -290,11 +290,11 @@
 
 
 &uart8 {
-    
+
 };
 
 &uart9 {
-    
+
 };
 
 
@@ -306,7 +306,7 @@
     data-bits = <8>;
     pinctrl-0 = <&usart2_de_pd4 &usart2_rx_pd6 &usart2_tx_pd5>;
     pinctrl-names = "default";
-    de-enable;    
+    de-enable;
 };
 /*RS485*/
 &usart3 {
@@ -328,7 +328,7 @@
     parity = "even";
     pinctrl-0 = <&uart5_rx_pd2 &uart5_tx_pc12>;
     pinctrl-names = "default";
-    fifo-enable;    
+    fifo-enable;
 };
 /*---------------------usart config end------------------------*/
 
@@ -347,11 +347,11 @@
  *
  *
  *                    bitrate
- * The CAN bitrates are set using: kconfig: option: `CONFIG_CAN_DEFAULT_BITRATE` 
- * and: kconfig: option: `CONFIG_CAN_DEFAULT_BITRATE_DATA`, but can be overridden on a board level 
- * using the ``bitrate`` and ``bitrate-data`` CAN controller devicetree properties if needed. 
+ * The CAN bitrates are set using: kconfig: option: `CONFIG_CAN_DEFAULT_BITRATE`
+ * and: kconfig: option: `CONFIG_CAN_DEFAULT_BITRATE_DATA`, but can be overridden on a board level
+ * using the ``bitrate`` and ``bitrate-data`` CAN controller devicetree properties if needed.
  * Default bitrates are 125 kbits/s for the arbitration phase/CAN classic and 1 Mbit/s for the CAN FD data
- * 
+ *
  */
 &fdcan1 {
     status = "okay";

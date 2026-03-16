@@ -17,7 +17,7 @@ properties:
 
   rx-manager:
     type: phandle
-    required: true
+    required: false
     description: |
       Reference to a shared CAN RX manager (rp,can-rx-manager) bound to the same can-bus.
       When present, motor drivers should receive frames through the manager instead of
@@ -25,7 +25,7 @@ properties:
 
   tx-manager:
     type: phandle
-    required: true
+    required: false
     description: |
       Reference to a shared CAN TX manager (rp,can-tx-manager) bound to the same can-bus.
       When present, motor drivers should send frames through the manager instead of
